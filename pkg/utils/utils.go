@@ -70,7 +70,8 @@ func isSubPath(base, target string) bool {
 	if err != nil {
 		return false
 	}
-	return len(rel) > 0 && rel[0] != '.'
+	// Reject any path component that navigates above base
+	return !strings.HasPrefix(rel, "..")
 }
 
 func extractFile(f *zip.File, dest string) error {
