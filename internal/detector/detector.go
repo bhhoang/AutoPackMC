@@ -4,15 +4,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 // PackType represents the detected modpack format.
 type PackType int
 
 const (
-	PackTypeUnknown  PackType = iota
-	PackTypeCurseForge        // contains manifest.json
-	PackTypeRaw               // contains /mods directory
+	PackTypeUnknown     PackType = iota
+	PackTypeCurseForge         // contains manifest.json
+	PackTypeRaw                // contains /mods directory
+	PackTypeGoogleDrive       // Google Drive link
 )
 
 // String returns a human-readable name for the PackType.
@@ -22,6 +24,8 @@ func (p PackType) String() string {
 		return "CurseForge"
 	case PackTypeRaw:
 		return "Raw"
+	case PackTypeGoogleDrive:
+		return "GoogleDrive"
 	default:
 		return "Unknown"
 	}
@@ -41,4 +45,10 @@ func Detect(dir string) (PackType, error) {
 	}
 
 	return PackTypeUnknown, fmt.Errorf("cannot detect pack type in %q: no manifest.json or mods/ directory found", dir)
+}
+
+var driveURLRegex = regexp.MustCompile(`drive\.google\.com/(?:file|d)/[a-zA-Z0-9_-]+`)
+
+func IsGoogleDriveURL(input string) bool {
+	return driveURLRegex.MatchString(input)
 }

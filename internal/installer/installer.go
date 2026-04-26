@@ -66,7 +66,10 @@ func Install(serverDir, loaderType, mcVersion, loaderVersion, javaPath string) e
 	if err := writeEULA(serverDir); err != nil {
 		return err
 	}
-	return writeServerProperties(serverDir)
+	if err := writeServerProperties(serverDir); err != nil {
+		return err
+	}
+	return WriteRunScript(serverDir, mcVersion, loaderVersion)
 }
 
 func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
@@ -134,4 +137,18 @@ func writeServerProperties(serverDir string) error {
 		return nil
 	}
 	return os.WriteFile(propsPath, []byte(defaultServerProperties), 0o644)
+}
+
+func WriteRunScript(serverDir, mcVersion, loaderVersion string) error {
+	runShPath := filepath.Join(serverDir, "run.sh")
+	if utils.FileExists(runShPath) {
+		return nil
+	}
+
+	content := "#!/usr/bin/env sh\n" +
+		"# Minecraft server startup script\n" +
+		"# Java path can be customized below or set via environment variable\n" +
+		"JAVA=\"${JAVA:-java}\"\n" +
+		"exec \"${JAVA}\" @user_jvm_args.txt @libraries/net/minecraftforge/forge/" + mcVersion + "-" + loaderVersion + "/unix_args.txt \"$@\"\n"
+	return os.WriteFile(runShPath, []byte(content), 0o755)
 }

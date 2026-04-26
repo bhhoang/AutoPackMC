@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+
+	unrar "github.com/markpendlebury/gounrar"
 )
 
 // EnsureDir creates a directory (and any parents) if it does not exist.
@@ -28,8 +32,42 @@ func DirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
+// ExtractArchive extracts a ZIP or RAR archive from src into the dest directory.
+func ExtractArchive(src, dest string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	content := string(data)
+	if strings.HasPrefix(content, "PK") || strings.Contains(content, "application/zip") {
+		return extractZip(src, dest)
+	}
+	if strings.HasPrefix(content, "Rar!") || strings.Contains(content, "application/x-rar") || isRARBinary(data) {
+		return extractRar(src, dest)
+	}
+
+	ext := strings.ToLower(filepath.Ext(src))
+	if ext == ".zip" {
+		return extractZip(src, dest)
+	}
+	if ext == ".rar" {
+		return extractRar(src, dest)
+	}
+
+	return fmt.Errorf("unsupported archive format for file: %s", src)
+}
+
+func isRARBinary(data []byte) bool {
+	return len(data) >= 6 && string(data[:6]) == "Rar!\x1a"
+}
+
 // ExtractZip extracts a ZIP archive from src into the dest directory.
 func ExtractZip(src, dest string) error {
+	return extractZip(src, dest)
+}
+
+func extractZip(src, dest string) error {
 	r, err := zip.OpenReader(src)
 	if err != nil {
 		return fmt.Errorf("open zip %q: %w", src, err)
@@ -90,6 +128,17 @@ func extractFile(f *zip.File, dest string) error {
 
 	_, err = io.Copy(out, rc) // #nosec G110 — controlled ZIP extraction
 	return err
+}
+
+func extractRar(src, dest string) error {
+	if err := EnsureDir(dest); err != nil {
+		return err
+	}
+
+	if err := unrar.RarExtractor(src, dest); err != nil {
+		return fmt.Errorf("extract RAR: %w", err)
+	}
+	return nil
 }
 
 // CopyDir recursively copies src directory to dest.
@@ -200,5 +249,120 @@ func downloadOnce(url, dest string, headers map[string]string) error {
 	defer out.Close()
 
 	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
+var driveFileIDRegex = regexp.MustCompile(`/d/([a-zA-Z0-9_-]+)`)
+
+func ExtractGoogleDriveFileID(link string) (string, error) {
+	u, err := url.Parse(link)
+	if err != nil {
+		return "", err
+	}
+
+	matches := driveFileIDRegex.FindStringSubmatch(u.Path)
+	if len(matches) > 1 {
+		return matches[1], nil
+	}
+
+	matches = driveFileIDRegex.FindStringSubmatch(link)
+	if len(matches) > 1 {
+		return matches[1], nil
+	}
+
+	return "", fmt.Errorf("no Google Drive file ID found in %q", link)
+}
+
+func DownloadGoogleDriveFile(fileID, dest string) error {
+	downloadURL := fmt.Sprintf("https://drive.google.com/uc?export=download&id=%s", fileID)
+
+	req, err := http.NewRequest(http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d for Google Drive file %s", resp.StatusCode, fileID)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "application/zip") || strings.Contains(contentType, "application/x-zip-compressed") || strings.Contains(contentType, "application/octet-stream") || strings.Contains(contentType, "application/x-rar-compressed") {
+		out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+		if err != nil {
+			return err
+		}
+		defer out.Close()
+
+		_, err = io.Copy(out, resp.Body)
+		return err
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	content := string(body)
+
+	if strings.Contains(content, "attachment") || strings.Contains(content, "filename=") {
+		out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+		if err != nil {
+			return err
+		}
+		defer out.Close()
+
+		_, err = out.WriteString(content)
+		return err
+	}
+
+	confirmRegex := regexp.MustCompile(`name="confirm" value="([^"]+)"`)
+	matches := confirmRegex.FindStringSubmatch(content)
+	var confirmToken string
+	if len(matches) > 1 {
+		confirmToken = matches[1]
+	} else {
+		confirmToken = "t"
+	}
+
+	uuidRegex := regexp.MustCompile(`name="uuid" value="([^"]+)"`)
+	uuidMatches := uuidRegex.FindStringSubmatch(content)
+	var uuidToken string
+	if len(uuidMatches) > 1 {
+		uuidToken = uuidMatches[1]
+	}
+
+	cookies := resp.Cookies()
+	downloadURL = fmt.Sprintf("https://drive.usercontent.google.com/download?id=%s&export=download&confirm=%s", fileID, confirmToken)
+	if uuidToken != "" {
+		downloadURL += "&uuid=" + uuidToken
+	}
+
+	downloadReq, err := http.NewRequest(http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return err
+	}
+	for _, c := range cookies {
+		downloadReq.AddCookie(c)
+	}
+
+	resp2, err := http.DefaultClient.Do(downloadReq)
+	if err != nil {
+		return err
+	}
+	defer resp2.Body.Close()
+
+	if resp2.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d downloading from %s", resp2.StatusCode, downloadURL)
+	}
+
+	out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp2.Body)
 	return err
 }
