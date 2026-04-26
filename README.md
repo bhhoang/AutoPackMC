@@ -1,17 +1,19 @@
 # AutoPackMC
 
-**mcpackctl** is a production-ready Go CLI tool that automatically downloads, configures, and runs Minecraft modpack servers from CurseForge or raw pack formats using Forge or Fabric loaders.
+**mcpackctl** is a production-ready Go CLI tool that automatically downloads, configures, and runs Minecraft modpack servers from CurseForge, Google Drive, or raw pack formats using Forge or Fabric loaders.
 
 ---
 
 ## Features
 
 - **Auto-detection** of CurseForge (`manifest.json`) and raw (`/mods` folder) pack formats
+- **Google Drive support** — download directly from `.zip` or `.rar` files on Google Drive
 - **Parallel mod downloads** with a configurable worker pool and exponential-backoff retry
 - **Local cache** at `~/.cache/mcpackctl/` — identical mods are not re-downloaded
 - **Client-mod cleaner** — automatically removes client-only JARs (OptiFine, Sodium, Iris, JourneyMap, etc.)
 - **Loader installation** — downloads and runs the Forge installer or fetches the Fabric server JAR automatically
-- **Server bootstrap** — writes `eula.txt` and a default `server.properties`
+- **Server bootstrap** — writes `eula.txt`, `server.properties`, and `run.sh`
+- **Custom Java support** — set `JAVA` env var or use `--java-path` to use specific Java version
 - **Graceful shutdown** — handles `SIGINT`/`SIGTERM` cleanly when running the server
 
 ---
@@ -51,6 +53,9 @@ mcpackctl setup --input MyPack-1.0.0.zip --output ./server
 # From an extracted directory
 mcpackctl setup --input ./my-pack-dir --output ./server
 
+# From Google Drive (supports .zip and .rar)
+mcpackctl setup --input "https://drive.google.com/file/d/13fyE_SdT0k-j-ucYXGERtQUyZ9e89B-b/view?usp=sharing" --output ./server
+
 # Custom RAM and Java path
 mcpackctl setup --input pack.zip --output ./server --ram 8G --java-path /usr/lib/jvm/java-21/bin/java
 
@@ -65,11 +70,37 @@ mcpackctl start ./server
 mcpackctl start ./server --ram 6G --java-path /usr/bin/java
 ```
 
+### Download individual mods or files
+
+```bash
+# Download a CurseForge mod by project ID and file ID
+mcpackctl download --mod 306612 --file 5159498 --output ./mods
+
+# Download from a direct URL
+mcpackctl download --url "https://example.com/mod.jar" --output ./mods
+
+# With CurseForge API key (for accurate filenames)
+mcpackctl download --mod 306612 --file 5159498 --output ./mods --api-key YOUR_API_KEY
+```
+
+### Custom Java version
+
+The `run.sh` script accepts a `JAVA` environment variable:
+
+```bash
+# Use a specific Java version
+JAVA=/usr/lib/jvm/java-21/bin/java ./server/run.sh
+
+# Or export it globally
+export JAVA=/usr/lib/jvm/java-21/bin/java
+./server/run.sh
+```
+
 ### All flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--input` | *(required)* | Pack ZIP file or extracted directory |
+| `--input` | *(required)* | Pack ZIP, directory, or Google Drive URL |
 | `--output` | `./server` | Destination server directory |
 | `--ram` | `2G` | JVM max heap (`-Xmx`) |
 | `--java-path` | `java` | Path to `java` executable |
@@ -107,21 +138,35 @@ mcpackctl setup --input pack.zip --output ./server
 
 ---
 
-## Project Structure
+## Supported Formats
 
+### Input Sources
+- **ZIP files** — CurseForge modpack archives (`.zip`)
+- **RAR archives** — Google Drive downloads (`.rar`)
+- **Directories** — Extracted packs or raw `/mods` folders
+- **Google Drive URLs** — Direct download support
+
+### Mod Loaders
+- **Forge** — Full support
+- **NeoForge** — Full support
+- **Fabric** — Full support
+
+---
+
+## Project Structure
 ```
 cmd/mcpackctl/       CLI entrypoint (main.go)
 internal/
   cmd/               Cobra command definitions
-  detector/          Detect CurseForge vs raw pack format
+  detector/          Detect pack type and Google Drive URLs
   parser/            Parse manifest.json or raw folder
   downloader/        Parallel mod downloader with cache & retry
-  installer/         Forge/Fabric server installer + eula/properties
+  installer/         Forge/Fabric server installer + scripts
   cleaner/           Remove client-only mods
   runtime/           Start and supervise the server process
 pkg/
   logger/            zerolog wrapper with pretty console output
-  utils/             Shared utilities (zip, copy, HTTP download)
+  utils/             Shared utilities (zip, rar, HTTP download)
 main.go              Thin root entrypoint
 Dockerfile           Container image based on openjdk:21-jdk-slim
 ```

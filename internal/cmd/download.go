@@ -1,0 +1,133 @@
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"path/filepath"
+	"strconv"
+
+	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+)
+
+func newDownloadCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "download",
+		Short: "Download mods or files",
+		RunE:  runDownload,
+	}
+
+	cmd.Flags().String("mod", "", "CurseForge mod ID (project ID)")
+	cmd.Flags().String("file", "", "CurseForge file ID")
+	cmd.Flags().String("output", "./mods", "output directory")
+	cmd.Flags().String("url", "", "direct URL to download")
+	cmd.Flags().String("api-key", "", "CurseForge API key")
+
+	return cmd
+}
+
+func runDownload(cmd *cobra.Command, _ []string) error {
+	log := logger.Get()
+
+	modID, _ := cmd.Flags().GetString("mod")
+	fileID, _ := cmd.Flags().GetString("file")
+	output, _ := cmd.Flags().GetString("output")
+	url, _ := cmd.Flags().GetString("url")
+	apiKey, _ := cmd.Flags().GetString("api-key")
+
+	if apiKey == "" {
+		apiKey = viper.GetString("curseforge_api_key")
+	}
+	if output == "" {
+		output = "./mods"
+	}
+
+	if err := utils.EnsureDir(output); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+
+	if modID != "" && fileID != "" {
+		return downloadCurseForgeMod(modID, fileID, output, apiKey)
+	}
+
+	if url != "" {
+		filename := filepath.Base(url)
+		dest := filepath.Join(output, filename)
+		log.Info().Str("url", url).Str("dest", dest).Msg("downloading file")
+		if err := utils.DownloadFile(url, dest, nil); err != nil {
+			return fmt.Errorf("download: %w", err)
+		}
+		log.Info().Str("file", dest).Msg("downloaded")
+		return nil
+	}
+
+	return fmt.Errorf("provide --mod and --file, or --url")
+}
+
+func downloadCurseForgeMod(modID, fileID, output, apiKey string) error {
+	log := logger.Get()
+
+	projectID, err := strconv.Atoi(modID)
+	if err != nil {
+		return fmt.Errorf("invalid mod ID: %w", err)
+	}
+	fileIDInt, err := strconv.Atoi(fileID)
+	if err != nil {
+		return fmt.Errorf("invalid file ID: %w", err)
+	}
+
+	fileInfoURL := fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d", projectID, fileIDInt)
+	resp, err := http.Get(fileInfoURL)
+	if err != nil {
+		return fmt.Errorf("fetch file info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("CurseForge API returned HTTP %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Data struct {
+			FileName string `json:"fileName"`
+			DownloadURL string `json:"downloadUrl"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("parse response: %w", err)
+	}
+
+	filename := result.Data.FileName
+	downloadURL := result.Data.DownloadURL
+
+	if filename == "" {
+		filename = fmt.Sprintf("mod-%d-%d.jar", projectID, fileIDInt)
+	}
+	if downloadURL == "" {
+		downloadURL = fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d/download", projectID, fileIDInt)
+	}
+
+	dest := filepath.Join(output, filename)
+	log.Info().
+		Int("projectID", projectID).
+		Int("fileID", fileIDInt).
+		Str("filename", filename).
+		Msg("downloading mod")
+
+	headers := map[string]string{}
+	if apiKey != "" {
+		headers["X-Api-Key"] = apiKey
+	}
+
+	if err := utils.DownloadFile(downloadURL, dest, headers); err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+
+	log.Info().Str("file", dest).Msg("mod downloaded")
+	return nil
+}

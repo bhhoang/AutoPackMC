@@ -44,6 +44,7 @@ func init() {
 
 	rootCmd.AddCommand(newSetupCmd())
 	rootCmd.AddCommand(newStartCmd())
+	rootCmd.AddCommand(newDownloadCmd())
 }
 
 func initConfig() {
@@ -113,16 +114,56 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		javaPath = viper.GetString("java_path")
 	}
 
+	if detector.IsGoogleDriveURL(input) {
+		log.Info().Str("url", input).Msg("downloading from Google Drive")
+
+		fileID, err := utils.ExtractGoogleDriveFileID(input)
+		if err != nil {
+			return fmt.Errorf("extract Google Drive file ID: %w", err)
+		}
+
+		output = absPath(output)
+		if err := utils.EnsureDir(output); err != nil {
+			return fmt.Errorf("create output dir: %w", err)
+		}
+
+		zipPath := filepath.Join(output, "_pack_download.zip")
+		if err := utils.DownloadGoogleDriveFile(fileID, zipPath); err != nil {
+			return fmt.Errorf("download Google Drive file: %w", err)
+		}
+
+		workDir := filepath.Join(output, "_pack_extracted")
+		log.Info().Str("archive", zipPath).Str("dest", workDir).Msg("extracting pack archive")
+		if err := utils.ExtractArchive(zipPath, workDir); err != nil {
+			return fmt.Errorf("extract archive: %w", err)
+		}
+
+		packType, err := detector.Detect(workDir)
+		if err != nil {
+			return fmt.Errorf("detect pack type: %w", err)
+		}
+		log.Info().Str("type", packType.String()).Msg("detected pack type")
+
+		switch packType {
+		case detector.PackTypeCurseForge:
+			return setupCurseForge(workDir, output, javaPath, forceLoader, skipClean)
+		case detector.PackTypeRaw:
+			return setupRaw(workDir, output, javaPath, forceLoader, skipClean)
+		default:
+			return fmt.Errorf("unsupported pack type: %s", packType)
+		}
+	}
+
 	input = absPath(input)
 	output = absPath(output)
 
-	// If input is a ZIP, extract it first
 	workDir := input
-	if strings.HasSuffix(strings.ToLower(input), ".zip") {
+
+	if strings.HasSuffix(strings.ToLower(input), ".zip") || strings.HasSuffix(strings.ToLower(input), ".rar") {
 		workDir = filepath.Join(output, "_pack_extracted")
-		log.Info().Str("zip", input).Str("dest", workDir).Msg("extracting pack ZIP")
-		if err := utils.ExtractZip(input, workDir); err != nil {
-			return fmt.Errorf("extract zip: %w", err)
+		log.Info().Str("archive", input).Str("dest", workDir).Msg("extracting pack archive")
+		if err := utils.ExtractArchive(input, workDir); err != nil {
+			return fmt.Errorf("extract archive: %w", err)
 		}
 	}
 
