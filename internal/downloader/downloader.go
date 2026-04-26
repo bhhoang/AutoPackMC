@@ -154,30 +154,15 @@ func (d *Downloader) downloadMod(t Task) error {
 }
 
 // resolveDownloadURL fetches the real download URL from the CurseForge API.
-// Falls back to a direct CDN pattern when no API key is available.
+// Uses the public API v1 endpoint that doesn't require an API key.
 func (d *Downloader) resolveDownloadURL(projectID, fileID int) (url, filename string, err error) {
 	log := logger.Get()
 
-	if d.APIKey == "" {
-		log.Warn().
-			Int("projectID", projectID).
-			Int("fileID", fileID).
-			Msg("no CurseForge API key set; attempting direct CDN URL (may fail for some mods)")
-		// Best-effort direct CDN pattern
-		url = fmt.Sprintf("https://edge.forgecdn.net/files/%d/%d/", fileID/1000, fileID%1000)
-		return url, "", nil
-	}
-
-	apiURL := fmt.Sprintf(curseForgeBaseURL, projectID, fileID)
-	req, reqErr := http.NewRequest(http.MethodGet, apiURL, nil)
-	if reqErr != nil {
-		return "", "", reqErr
-	}
-	req.Header.Set("X-Api-Key", d.APIKey)
-
-	resp, respErr := http.DefaultClient.Do(req)
-	if respErr != nil {
-		return "", "", respErr
+	// First, get the file info to get the filename
+	fileInfoURL := fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d", projectID, fileID)
+	resp, err := http.Get(fileInfoURL)
+	if err != nil {
+		return "", "", err
 	}
 	defer resp.Body.Close()
 
@@ -187,15 +172,24 @@ func (d *Downloader) resolveDownloadURL(projectID, fileID int) (url, filename st
 
 	body, _ := io.ReadAll(resp.Body)
 	var result struct {
-		Data string `json:"data"`
+		Data struct {
+			FileName string `json:"fileName"`
+		} `json:"data"`
 	}
 	if jsonErr := json.Unmarshal(body, &result); jsonErr != nil {
 		return "", "", fmt.Errorf("parse CurseForge API response: %w", jsonErr)
 	}
 
-	// Extract filename from the URL path
-	filename = filepath.Base(result.Data)
-	return result.Data, filename, nil
+	filename = result.Data.FileName
+	downloadURL := fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d/download", projectID, fileID)
+
+	log.Debug().
+		Int("projectID", projectID).
+		Int("fileID", fileID).
+		Str("filename", filename).
+		Msg("got file info from CurseForge API")
+
+	return downloadURL, filename, nil
 }
 
 func downloadWithRetry(url, dest string, headers map[string]string) error {
