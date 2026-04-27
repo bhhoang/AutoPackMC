@@ -211,7 +211,7 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 	// archive), copy it directly instead of re-downloading every mod from CurseForge.
 	packModsDir := filepath.Join(workDir, "mods")
 	if utils.DirExists(packModsDir) {
-		log.Info().Str("src", packModsDir).Str("dst", modsDir).Msg("using pre-existing mods directory from pack, skipping CurseForge download")
+		log.Info().Str("src", packModsDir).Str("dst", modsDir).Msg("using pre-existing mods from pack")
 		if err := utils.CopyDir(packModsDir, modsDir); err != nil {
 			return fmt.Errorf("copy pre-existing mods: %w", err)
 		}
