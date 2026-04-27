@@ -208,12 +208,24 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 	modsDir := filepath.Join(output, "mods")
 
 	// If the pack already ships a mods/ directory (e.g. a pre-downloaded Google Drive
-	// archive), copy it directly instead of re-downloading every mod from CurseForge.
+	// archive), copy it directly and then download any mods that are listed in the
+	// manifest but absent from that folder.  This handles packs where the cloud
+	// archive is complete as well as partially-populated ones.
 	packModsDir := filepath.Join(workDir, "mods")
 	if utils.DirExists(packModsDir) {
 		log.Info().Str("src", packModsDir).Str("dst", modsDir).Msg("using pre-existing mods from pack")
 		if err := utils.CopyDir(packModsDir, modsDir); err != nil {
 			return fmt.Errorf("copy pre-existing mods: %w", err)
+		}
+
+		apiKey := viper.GetString("curseforge_api_key")
+		cacheDir := viper.GetString("cache_dir")
+		workers := viper.GetInt("workers")
+
+		dl := downloader.New(cacheDir, apiKey, workers)
+		log.Info().Int("count", len(manifest.Files)).Msg("checking manifest mods against pre-existing mods folder")
+		if err := dl.DownloadMissingMods(manifest, modsDir); err != nil {
+			return fmt.Errorf("download missing mods: %w", err)
 		}
 	} else {
 		apiKey := viper.GetString("curseforge_api_key")
