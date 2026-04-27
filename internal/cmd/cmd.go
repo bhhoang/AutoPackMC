@@ -206,14 +206,25 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 	}
 
 	modsDir := filepath.Join(output, "mods")
-	apiKey := viper.GetString("curseforge_api_key")
-	cacheDir := viper.GetString("cache_dir")
-	workers := viper.GetInt("workers")
 
-	dl := downloader.New(cacheDir, apiKey, workers)
-	log.Info().Int("count", len(manifest.Files)).Msg("downloading mods")
-	if err := dl.DownloadMods(manifest, modsDir); err != nil {
-		return fmt.Errorf("download mods: %w", err)
+	// If the pack already ships a mods/ directory (e.g. a pre-downloaded Google Drive
+	// archive), copy it directly instead of re-downloading every mod from CurseForge.
+	packModsDir := filepath.Join(workDir, "mods")
+	if utils.DirExists(packModsDir) {
+		log.Info().Str("src", packModsDir).Str("dst", modsDir).Msg("using pre-existing mods directory from pack, skipping CurseForge download")
+		if err := utils.CopyDir(packModsDir, modsDir); err != nil {
+			return fmt.Errorf("copy pre-existing mods: %w", err)
+		}
+	} else {
+		apiKey := viper.GetString("curseforge_api_key")
+		cacheDir := viper.GetString("cache_dir")
+		workers := viper.GetInt("workers")
+
+		dl := downloader.New(cacheDir, apiKey, workers)
+		log.Info().Int("count", len(manifest.Files)).Msg("downloading mods")
+		if err := dl.DownloadMods(manifest, modsDir); err != nil {
+			return fmt.Errorf("download mods: %w", err)
+		}
 	}
 
 	// Copy overrides
