@@ -222,7 +222,7 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 		cacheDir := viper.GetString("cache_dir")
 		workers := viper.GetInt("workers")
 
-		dl := downloader.New(cacheDir, apiKey, workers)
+		dl := downloader.New(cacheDir, apiKey, workers, !skipClean)
 		log.Info().Int("count", len(manifest.Files)).Msg("checking manifest mods against pre-existing mods folder")
 		if err := dl.DownloadMissingMods(manifest, modsDir); err != nil {
 			return fmt.Errorf("download missing mods: %w", err)
@@ -232,7 +232,7 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 		cacheDir := viper.GetString("cache_dir")
 		workers := viper.GetInt("workers")
 
-		dl := downloader.New(cacheDir, apiKey, workers)
+		dl := downloader.New(cacheDir, apiKey, workers, !skipClean)
 		log.Info().Int("count", len(manifest.Files)).Msg("downloading mods")
 		if err := dl.DownloadMods(manifest, modsDir); err != nil {
 			return fmt.Errorf("download mods: %w", err)

@@ -16,11 +16,32 @@ import (
 )
 
 const (
-	defaultWorkers    = 4
-	maxRetries        = 3
-	curseForgeBaseURL = "https://api.curseforge.com/v1/mods/%d/files/%d/download-url"
-	cacheKeyFormat    = "%d-%d.jar" // <projectID>-<fileID>.jar — used for cache entries without a resolved filename
+	defaultWorkers = 4
+	maxRetries     = 3
+	cacheKeyFormat = "%d-%d.jar" // <projectID>-<fileID>.jar — used for cache entries without a resolved filename
 )
+
+// FileInfo holds metadata about a mod file returned by the CurseForge API.
+type FileInfo struct {
+	FileName     string
+	DownloadURL  string
+	GameVersions []string
+}
+
+// IsClientOnly returns true when the file is tagged for the Client side but
+// not for the Server side, indicating it should not be installed on a server.
+func (fi *FileInfo) IsClientOnly() bool {
+	var hasClient, hasServer bool
+	for _, v := range fi.GameVersions {
+		switch v {
+		case "Client":
+			hasClient = true
+		case "Server":
+			hasServer = true
+		}
+	}
+	return hasClient && !hasServer
+}
 
 // Task represents a single mod download request.
 type Task struct {
@@ -33,20 +54,23 @@ type Task struct {
 
 // Downloader manages the worker pool for parallel mod downloads.
 type Downloader struct {
-	Workers    int
-	CacheDir   string
-	APIKey     string
+	Workers          int
+	CacheDir         string
+	APIKey           string
+	FilterClientOnly bool // when true, mods tagged Client-only (no Server tag) are skipped
 }
 
 // New creates a Downloader with sensible defaults.
-func New(cacheDir, apiKey string, workers int) *Downloader {
+// filterClientOnly controls whether client-only mods are skipped during download.
+func New(cacheDir, apiKey string, workers int, filterClientOnly bool) *Downloader {
 	if workers <= 0 {
 		workers = defaultWorkers
 	}
 	return &Downloader{
-		Workers:  workers,
-		CacheDir: cacheDir,
-		APIKey:   apiKey,
+		Workers:          workers,
+		CacheDir:         cacheDir,
+		APIKey:           apiKey,
+		FilterClientOnly: filterClientOnly,
 	}
 }
 
@@ -102,6 +126,16 @@ func (d *Downloader) DownloadMods(manifest *parser.Manifest, destDir string) err
 	return nil
 }
 
+// logClientOnlySkip emits an info-level log indicating a client-only mod was skipped.
+func logClientOnlySkip(projectID, fileID int, fi *FileInfo) {
+	logger.Get().Info().
+		Int("projectID", projectID).
+		Int("fileID", fileID).
+		Str("filename", fi.FileName).
+		Strs("gameVersions", fi.GameVersions).
+		Msg("skipping client-only mod")
+}
+
 func (d *Downloader) downloadMod(t Task) error {
 	log := logger.Get()
 
@@ -124,11 +158,16 @@ func (d *Downloader) downloadMod(t Task) error {
 		filename = t.ResolvedFilename
 		downloadURL = fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d/download", t.ProjectID, t.FileID)
 	} else {
-		var err error
-		downloadURL, filename, err = d.resolveDownloadURL(t.ProjectID, t.FileID)
+		fi, err := d.fetchFileInfo(t.ProjectID, t.FileID)
 		if err != nil {
 			return err
 		}
+		if d.FilterClientOnly && fi.IsClientOnly() {
+			logClientOnlySkip(t.ProjectID, t.FileID, fi)
+			return nil
+		}
+		downloadURL = fi.DownloadURL
+		filename = fi.FileName
 	}
 
 	if err := utils.EnsureDir(d.CacheDir); err != nil {
@@ -164,43 +203,47 @@ func (d *Downloader) downloadMod(t Task) error {
 	return copyFileSimple(cacheFile, destFile)
 }
 
-// resolveDownloadURL fetches the real download URL from the CurseForge API.
-// Uses the public API v1 endpoint that doesn't require an API key.
-func (d *Downloader) resolveDownloadURL(projectID, fileID int) (url, filename string, err error) {
+// fetchFileInfo fetches file metadata (filename, download URL, and game versions)
+// from the CurseForge public API.
+func (d *Downloader) fetchFileInfo(projectID, fileID int) (*FileInfo, error) {
 	log := logger.Get()
 
-	// First, get the file info to get the filename
 	fileInfoURL := fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d", projectID, fileID)
 	resp, err := http.Get(fileInfoURL)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("CurseForge API returned HTTP %d for project %d file %d", resp.StatusCode, projectID, fileID)
+		return nil, fmt.Errorf("CurseForge API returned HTTP %d for project %d file %d", resp.StatusCode, projectID, fileID)
 	}
 
 	body, _ := io.ReadAll(resp.Body)
 	var result struct {
 		Data struct {
-			FileName string `json:"fileName"`
+			FileName     string   `json:"fileName"`
+			GameVersions []string `json:"gameVersions"`
 		} `json:"data"`
 	}
 	if jsonErr := json.Unmarshal(body, &result); jsonErr != nil {
-		return "", "", fmt.Errorf("parse CurseForge API response: %w", jsonErr)
+		return nil, fmt.Errorf("parse CurseForge API response: %w", jsonErr)
 	}
 
-	filename = result.Data.FileName
-	downloadURL := fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d/download", projectID, fileID)
+	fi := &FileInfo{
+		FileName:     result.Data.FileName,
+		DownloadURL:  fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d/download", projectID, fileID),
+		GameVersions: result.Data.GameVersions,
+	}
 
 	log.Debug().
 		Int("projectID", projectID).
 		Int("fileID", fileID).
-		Str("filename", filename).
+		Str("filename", fi.FileName).
+		Strs("gameVersions", fi.GameVersions).
 		Msg("got file info from CurseForge API")
 
-	return downloadURL, filename, nil
+	return fi, nil
 }
 
 func downloadWithRetry(url, dest string, headers map[string]string) error {
@@ -267,7 +310,7 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 
 		// Resolve the real filename from the CurseForge API to match against
 		// packs that ship jar files under their actual names.
-		_, filename, err := d.resolveDownloadURL(f.ProjectID, f.FileID)
+		fi, err := d.fetchFileInfo(f.ProjectID, f.FileID)
 		if err != nil {
 			if f.Required {
 				return fmt.Errorf("resolve mod %d/%d: %w", f.ProjectID, f.FileID, err)
@@ -279,6 +322,12 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 			continue
 		}
 
+		if d.FilterClientOnly && fi.IsClientOnly() {
+			logClientOnlySkip(f.ProjectID, f.FileID, fi)
+			continue
+		}
+
+		filename := fi.FileName
 		if filename != "" && existingFiles[filename] {
 			log.Debug().
 				Int("projectID", f.ProjectID).
