@@ -281,14 +281,6 @@ func setupRaw(workDir, output, javaPath, forceLoader string, skipClean bool) err
 		loaderType = forceLoader
 	}
 
-	if loaderType == "" {
-		log.Warn().Msg("loader type unknown for raw pack; skipping loader installation")
-	} else {
-		if err := installer.Install(output, loaderType, mcVersion, loaderVersion, javaPath); err != nil {
-			return fmt.Errorf("install loader: %w", err)
-		}
-	}
-
 	if !skipClean {
 		modsDir := filepath.Join(output, "mods")
 		removed, cleanErr := cleaner.Clean(modsDir)
@@ -296,6 +288,14 @@ func setupRaw(workDir, output, javaPath, forceLoader string, skipClean bool) err
 			log.Warn().Err(cleanErr).Msg("cleaner encountered an error")
 		} else {
 			log.Info().Int("removed", len(removed)).Msg("client-only mods removed")
+		}
+	}
+
+	if loaderType == "" {
+		log.Warn().Msg("loader type unknown for raw pack; skipping loader installation")
+	} else {
+		if err := installer.Install(output, loaderType, mcVersion, loaderVersion, javaPath); err != nil {
+			return fmt.Errorf("install loader: %w", err)
 		}
 	}
 
