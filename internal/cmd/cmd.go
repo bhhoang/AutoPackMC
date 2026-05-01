@@ -45,6 +45,7 @@ func init() {
 	rootCmd.AddCommand(newSetupCmd())
 	rootCmd.AddCommand(newStartCmd())
 	rootCmd.AddCommand(newDownloadCmd())
+	rootCmd.AddCommand(newCleanCmd())
 }
 
 func initConfig() {
@@ -332,6 +333,46 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	return runtime.Start(serverDir, ram, javaPath)
+}
+
+// ---------------------------------------------------------------------------
+// clean command
+// ---------------------------------------------------------------------------
+
+func newCleanCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "clean --mods-dir <path>",
+		Short: "Remove client-only mods from a mods directory",
+		Long: `Scans the given mods directory and removes any JAR files that are identified
+as client-only based on their filename patterns.`,
+		RunE: runClean,
+	}
+
+	cmd.Flags().String("mods-dir", "", "path to the mods directory to clean (required)")
+	_ = cmd.MarkFlagRequired("mods-dir")
+
+	return cmd
+}
+
+func runClean(cmd *cobra.Command, _ []string) error {
+	log := logger.Get()
+
+	modsDir, _ := cmd.Flags().GetString("mods-dir")
+	modsDir = absPath(modsDir)
+
+	log.Info().Str("dir", modsDir).Msg("cleaning client-only mods")
+
+	removed, err := cleaner.Clean(modsDir)
+	if err != nil {
+		return fmt.Errorf("clean: %w", err)
+	}
+
+	if len(removed) == 0 {
+		log.Info().Msg("no client-only mods found")
+	} else {
+		log.Info().Int("removed", len(removed)).Msg("client-only mods removed")
+	}
+	return nil
 }
 
 func absPath(p string) string {
