@@ -10,7 +10,7 @@
 - **Google Drive support** — download directly from `.zip` or `.rar` files on Google Drive
 - **Parallel mod downloads** with a configurable worker pool and exponential-backoff retry
 - **Local cache** at `~/.cache/mcpackctl/` — identical mods are not re-downloaded
-- **Client-mod cleaner** — automatically removes client-only JARs (OptiFine, Sodium, Iris, JourneyMap, etc.)
+- **Client-mod cleaner** — automatically removes client-only JARs using the CurseForge API's authoritative `gameVersions` field; falls back to filename patterns for raw packs
 - **Loader installation** — downloads and runs the Forge installer or fetches the Fabric server JAR automatically
 - **Server bootstrap** — writes `eula.txt`, `server.properties`, and `run.sh`
 - **Custom Java support** — set `JAVA` env var or use `--java-path` to use specific Java version
@@ -70,7 +70,33 @@ mcpackctl start ./server
 mcpackctl start ./server --ram 6G --java-path /usr/bin/java
 ```
 
-### Download individual mods or files
+### Clean client-only mods
+
+The `clean` command removes client-only mods from an existing server's mods directory. It supports two modes:
+
+**API-based (recommended for CurseForge packs)** — queries the CurseForge API for each mod's `gameVersions` field. A mod is only removed if it is tagged `"Client"` and has *no* `"Server"` tag. This is authoritative and will never accidentally delete a mod that is required on both sides.
+
+```bash
+mcpackctl clean --mods-dir ./server/mods --manifest ./manifest.json
+```
+
+**Pattern-based (fallback)** — uses a built-in list of known client-only filename substrings (OptiFine, Sodium, Iris, JourneyMap, etc.). This is less precise and may produce false positives. A warning is emitted when this mode is active.
+
+```bash
+mcpackctl clean --mods-dir ./server/mods
+```
+
+#### `clean` flags
+
+| Flag | Description |
+|------|-------------|
+| `--mods-dir` | *(required)* Path to the mods directory to clean |
+| `--manifest` | Path to `manifest.json` — enables API-based detection (recommended) |
+| `--api-key` | CurseForge API key (falls back to `MCPACKCTL_CURSEFORGE_API_KEY` / config) |
+
+The `setup` command runs the cleaner automatically after downloading mods (disable with `--skip-clean`). For CurseForge packs, `setup` always uses the API path since the manifest is already loaded.
+
+
 
 ```bash
 # Download a CurseForge mod by project ID and file ID
@@ -96,7 +122,7 @@ export JAVA=/usr/lib/jvm/java-21/bin/java
 ./server/run.sh
 ```
 
-### All flags
+### All `setup` flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
