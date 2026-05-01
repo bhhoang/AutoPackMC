@@ -6,6 +6,7 @@
 
 ## Features
 
+- **CurseForge URL setup** — pass a CurseForge modpack URL directly; the tool resolves the mod ID, selects the best file, prefers a server pack if available, and downloads everything automatically
 - **Auto-detection** of CurseForge (`manifest.json`) and raw (`/mods` folder) pack formats
 - **Google Drive support** — download directly from `.zip` or `.rar` files on Google Drive
 - **Parallel mod downloads** with a configurable worker pool and exponential-backoff retry
@@ -47,6 +48,12 @@ docker run -p 25565:25565 -v $(pwd)/server:/minecraft/server mcpackctl \
 ### Set up a modpack server
 
 ```bash
+# Directly from a CurseForge URL (recommended — resolves mod, selects server pack automatically)
+mcpackctl setup https://www.curseforge.com/minecraft/modpacks/deceasedcraft
+
+# Same URL via --input flag
+mcpackctl setup --input "https://www.curseforge.com/minecraft/modpacks/deceasedcraft" --output ./server
+
 # From a CurseForge ZIP
 mcpackctl setup --input MyPack-1.0.0.zip --output ./server
 
@@ -61,6 +68,28 @@ mcpackctl setup --input pack.zip --output ./server --ram 8G --java-path /usr/lib
 
 # Force a specific loader and skip client-mod cleaning
 mcpackctl setup --input pack.zip --output ./server --force-loader fabric --skip-clean
+```
+
+#### How CurseForge URL resolution works
+
+When a CurseForge URL is provided, `mcpackctl` performs the following steps using only the [official CurseForge API](https://api.curseforge.com/v1/):
+
+1. Extracts the modpack slug from the URL path.
+2. Calls `GET /v1/mods/search` to resolve the numeric mod ID (exact slug match → normalized name match → highest download count).
+3. Calls `GET /v1/mods/{modId}/files?sortField=3&sortOrder=desc&pageSize=20` — a **single-page** fetch of the 20 newest files.
+4. Selects the best file: first available Release build, falling back to any available file.
+5. Prefers a server pack (`isServerPack == true`) from the same page when one exists.
+6. Fetches the download URL via `GET /v1/mods/{modId}/files/{fileId}/download-url`.
+
+Example log output:
+
+```
+[resolver] Searching mod: deceasedcraft
+[resolver] Found modId=490660
+[resolver] Fetching latest files (pageSize=20)
+[resolver] Selected file 7623211
+[resolver] Found server pack 7623218
+[resolver] Using server pack
 ```
 
 ### Start the server
@@ -96,7 +125,7 @@ mcpackctl clean --mods-dir ./server/mods
 
 The `setup` command runs the cleaner automatically after downloading mods (disable with `--skip-clean`). For CurseForge packs, `setup` always uses the API path since the manifest is already loaded.
 
-
+### Download individual mods or files
 
 ```bash
 # Download a CurseForge mod by project ID and file ID
@@ -126,7 +155,7 @@ export JAVA=/usr/lib/jvm/java-21/bin/java
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--input` | *(required)* | Pack ZIP, directory, or Google Drive URL |
+| `--input` | *(optional)* | Pack ZIP, directory, CurseForge URL, or Google Drive URL. Can also be passed as a positional argument. |
 | `--output` | `./server` | Destination server directory |
 | `--ram` | `2G` | JVM max heap (`-Xmx`) |
 | `--java-path` | `java` | Path to `java` executable |
@@ -167,6 +196,7 @@ mcpackctl setup --input pack.zip --output ./server
 ## Supported Formats
 
 ### Input Sources
+- **CurseForge URLs** — resolve and download directly from `https://www.curseforge.com/minecraft/modpacks/{slug}`
 - **ZIP files** — CurseForge modpack archives (`.zip`)
 - **RAR archives** — Google Drive downloads (`.rar`)
 - **Directories** — Extracted packs or raw `/mods` folders
@@ -189,6 +219,7 @@ internal/
   downloader/        Parallel mod downloader with cache & retry
   installer/         Forge/Fabric server installer + scripts
   cleaner/           Remove client-only mods
+  resolver/          Resolve CurseForge URLs to download URLs (official API)
   runtime/           Start and supervise the server process
 pkg/
   logger/            zerolog wrapper with pretty console output
