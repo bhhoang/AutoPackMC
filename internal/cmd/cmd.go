@@ -208,6 +208,11 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 
 	modsDir := filepath.Join(output, "mods")
 
+	apiKey := viper.GetString("curseforge_api_key")
+	cacheDir := viper.GetString("cache_dir")
+	workers := viper.GetInt("workers")
+	dl := downloader.New(cacheDir, apiKey, workers, !skipClean)
+
 	// If the pack already ships a mods/ directory (e.g. a pre-downloaded Google Drive
 	// archive), copy it directly and then download any mods that are listed in the
 	// manifest but absent from that folder.  This handles packs where the cloud
@@ -219,21 +224,11 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 			return fmt.Errorf("copy pre-existing mods: %w", err)
 		}
 
-		apiKey := viper.GetString("curseforge_api_key")
-		cacheDir := viper.GetString("cache_dir")
-		workers := viper.GetInt("workers")
-
-		dl := downloader.New(cacheDir, apiKey, workers, !skipClean)
 		log.Info().Int("count", len(manifest.Files)).Msg("checking manifest mods against pre-existing mods folder")
 		if err := dl.DownloadMissingMods(manifest, modsDir); err != nil {
 			return fmt.Errorf("download missing mods: %w", err)
 		}
 	} else {
-		apiKey := viper.GetString("curseforge_api_key")
-		cacheDir := viper.GetString("cache_dir")
-		workers := viper.GetInt("workers")
-
-		dl := downloader.New(cacheDir, apiKey, workers, !skipClean)
 		log.Info().Int("count", len(manifest.Files)).Msg("downloading mods")
 		if err := dl.DownloadMods(manifest, modsDir); err != nil {
 			return fmt.Errorf("download mods: %w", err)
@@ -250,9 +245,9 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 	}
 
 	if !skipClean {
-		removed, cleanErr := cleaner.Clean(modsDir)
+		removed, cleanErr := dl.CleanMods(manifest, modsDir)
 		if cleanErr != nil {
-			log.Warn().Err(cleanErr).Msg("cleaner encountered an error")
+			log.Warn().Err(cleanErr).Msg("API-based cleaner encountered an error")
 		} else {
 			log.Info().Int("removed", len(removed)).Msg("client-only mods removed")
 		}
@@ -344,11 +339,20 @@ func newCleanCmd() *cobra.Command {
 		Use:   "clean --mods-dir <path>",
 		Short: "Remove client-only mods from a mods directory",
 		Long: `Scans the given mods directory and removes any JAR files that are identified
-as client-only based on their filename patterns.`,
+as client-only.
+
+When --manifest is provided, the CurseForge API is queried for each mod's
+gameVersions field, which gives an authoritative client/server classification
+and avoids false positives from filename pattern matching.
+
+Without --manifest, a built-in list of known client-only filename patterns is
+used as a fallback.`,
 		RunE: runClean,
 	}
 
 	cmd.Flags().String("mods-dir", "", "path to the mods directory to clean (required)")
+	cmd.Flags().String("manifest", "", "path to a CurseForge manifest.json for API-based detection (recommended)")
+	cmd.Flags().String("api-key", "", "CurseForge API key (falls back to MCPACKCTL_CURSEFORGE_API_KEY / config)")
 	_ = cmd.MarkFlagRequired("mods-dir")
 
 	return cmd
@@ -360,7 +364,41 @@ func runClean(cmd *cobra.Command, _ []string) error {
 	modsDir, _ := cmd.Flags().GetString("mods-dir")
 	modsDir = absPath(modsDir)
 
-	log.Info().Str("dir", modsDir).Msg("cleaning client-only mods")
+	manifestPath, _ := cmd.Flags().GetString("manifest")
+	apiKey, _ := cmd.Flags().GetString("api-key")
+	if apiKey == "" {
+		apiKey = viper.GetString("curseforge_api_key")
+	}
+
+	if manifestPath != "" {
+		manifestPath = absPath(manifestPath)
+		manifestDir := filepath.Dir(manifestPath)
+
+		manifest, err := parser.ParseCurseForge(manifestDir)
+		if err != nil {
+			return fmt.Errorf("parse manifest: %w", err)
+		}
+
+		cacheDir := viper.GetString("cache_dir")
+		workers := viper.GetInt("workers")
+		dl := downloader.New(cacheDir, apiKey, workers, true)
+
+		log.Info().Str("dir", modsDir).Msg("cleaning client-only mods using CurseForge API")
+		removed, err := dl.CleanMods(manifest, modsDir)
+		if err != nil {
+			return fmt.Errorf("clean: %w", err)
+		}
+
+		if len(removed) == 0 {
+			log.Info().Msg("no client-only mods found")
+		} else {
+			log.Info().Int("removed", len(removed)).Msg("client-only mods removed")
+		}
+		return nil
+	}
+
+	log.Warn().Msg("no --manifest provided; falling back to filename pattern matching (may have false positives)")
+	log.Info().Str("dir", modsDir).Msg("cleaning client-only mods using filename patterns")
 
 	removed, err := cleaner.Clean(modsDir)
 	if err != nil {

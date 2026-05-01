@@ -392,6 +392,53 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 	return nil
 }
 
+// CleanMods removes client-only mod JARs from modsDir using the CurseForge API
+// to determine each mod's server/client classification. It cross-references every
+// file listed in manifest against the mods already present in modsDir and deletes
+// those whose gameVersions indicate client-only. Returns the list of removed filenames.
+func (d *Downloader) CleanMods(manifest *parser.Manifest, modsDir string) ([]string, error) {
+	log := logger.Get()
+
+	presentFiles, err := listDirFiles(modsDir)
+	if err != nil {
+		return nil, fmt.Errorf("list mods dir: %w", err)
+	}
+
+	var removed []string
+	for _, f := range manifest.Files {
+		fi, apiErr := d.fetchFileInfo(f.ProjectID, f.FileID)
+		if apiErr != nil {
+			log.Warn().Err(apiErr).
+				Int("projectID", f.ProjectID).
+				Int("fileID", f.FileID).
+				Msg("could not fetch file info for clean check, skipping")
+			continue
+		}
+
+		if !fi.IsClientOnly() {
+			continue
+		}
+
+		if fi.FileName == "" || !presentFiles[fi.FileName] {
+			continue
+		}
+
+		fullPath := filepath.Join(modsDir, fi.FileName)
+		if removeErr := os.Remove(fullPath); removeErr != nil {
+			log.Warn().Err(removeErr).Str("file", fi.FileName).Msg("failed to remove client-only mod")
+			continue
+		}
+		log.Info().
+			Int("projectID", f.ProjectID).
+			Int("fileID", f.FileID).
+			Str("file", fi.FileName).
+			Strs("gameVersions", fi.GameVersions).
+			Msg("removed client-only mod")
+		removed = append(removed, fi.FileName)
+	}
+	return removed, nil
+}
+
 // listDirFiles returns a set of filenames (not full paths) present directly inside dir.
 func listDirFiles(dir string) (map[string]bool, error) {
 	entries, err := os.ReadDir(dir)
