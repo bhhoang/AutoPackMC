@@ -11,6 +11,7 @@ import (
 	"github.com/bhhoang/AutoPackMC/internal/downloader"
 	"github.com/bhhoang/AutoPackMC/internal/installer"
 	"github.com/bhhoang/AutoPackMC/internal/parser"
+	"github.com/bhhoang/AutoPackMC/internal/resolver"
 	"github.com/bhhoang/AutoPackMC/internal/runtime"
 	"github.com/bhhoang/AutoPackMC/pkg/logger"
 	"github.com/bhhoang/AutoPackMC/pkg/utils"
@@ -84,26 +85,40 @@ func initConfig() {
 
 func newSetupCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "setup --input <pack.zip|dir> --output <serverDir>",
+		Use:   "setup [<curseforge-url>] --input <pack.zip|dir> --output <serverDir>",
 		Short: "Download and configure a modpack server",
-		RunE:  runSetup,
+		Long: `Download and configure a Minecraft modpack server.
+
+Input may be:
+  - A local modpack ZIP or extracted directory (--input flag)
+  - A CurseForge modpack URL (as --input or positional argument)
+    e.g. https://www.curseforge.com/minecraft/modpacks/deceasedcraft`,
+		RunE: runSetup,
 	}
 
-	cmd.Flags().String("input", "", "path to the modpack ZIP or extracted directory (required)")
+	cmd.Flags().String("input", "", "path to the modpack ZIP/dir, or a CurseForge URL")
 	cmd.Flags().String("output", "./server", "destination directory for the server")
 	cmd.Flags().String("ram", "", "JVM max heap size (e.g. 4G)")
 	cmd.Flags().String("java-path", "", "path to java executable")
 	cmd.Flags().String("force-loader", "", "override loader type: forge or fabric")
 	cmd.Flags().Bool("skip-clean", false, "skip removal of client-only mods")
-	_ = cmd.MarkFlagRequired("input")
 
 	return cmd
 }
 
-func runSetup(cmd *cobra.Command, _ []string) error {
+func runSetup(cmd *cobra.Command, args []string) error {
 	log := logger.Get()
 
 	input, _ := cmd.Flags().GetString("input")
+	// Accept a CurseForge URL (or any input) as a positional argument when
+	// --input is not provided.
+	if input == "" && len(args) > 0 {
+		input = args[0]
+	}
+	if input == "" {
+		return fmt.Errorf("provide --input <pack.zip|dir|curseforge-url> or pass the URL as a positional argument")
+	}
+
 	output, _ := cmd.Flags().GetString("output")
 	ram, _ := cmd.Flags().GetString("ram")
 	javaPath, _ := cmd.Flags().GetString("java-path")
@@ -117,6 +132,60 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		javaPath = viper.GetString("java_path")
 	}
 
+	// -----------------------------------------------------------------------
+	// CurseForge URL input
+	// -----------------------------------------------------------------------
+	if resolver.IsCurseForgeURL(input) {
+		log.Info().Str("url", input).Msg("resolving modpack from CurseForge URL")
+
+		apiKey := viper.GetString("curseforge_api_key")
+		res := resolver.New(apiKey)
+
+		downloadURL, err := res.Resolve(input)
+		if err != nil {
+			return fmt.Errorf("resolve CurseForge URL: %w", err)
+		}
+
+		output = absPath(output)
+		if err := utils.EnsureDir(output); err != nil {
+			return fmt.Errorf("create output dir: %w", err)
+		}
+
+		zipPath := filepath.Join(output, "_pack_download.zip")
+		log.Info().Str("url", downloadURL).Str("dest", zipPath).Msg("downloading modpack archive")
+		headers := map[string]string{}
+		if apiKey != "" {
+			headers["x-api-key"] = apiKey
+		}
+		if err := utils.DownloadFile(downloadURL, zipPath, headers); err != nil {
+			return fmt.Errorf("download modpack: %w", err)
+		}
+
+		workDir := filepath.Join(output, "_pack_extracted")
+		log.Info().Str("archive", zipPath).Str("dest", workDir).Msg("extracting pack archive")
+		if err := utils.ExtractArchive(zipPath, workDir); err != nil {
+			return fmt.Errorf("extract archive: %w", err)
+		}
+
+		packType, err := detector.Detect(workDir)
+		if err != nil {
+			return fmt.Errorf("detect pack type: %w", err)
+		}
+		log.Info().Str("type", packType.String()).Msg("detected pack type")
+
+		switch packType {
+		case detector.PackTypeCurseForge:
+			return setupCurseForge(workDir, output, javaPath, forceLoader, skipClean)
+		case detector.PackTypeRaw:
+			return setupRaw(workDir, output, javaPath, forceLoader, skipClean)
+		default:
+			return fmt.Errorf("unsupported pack type: %s", packType)
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Google Drive URL input
+	// -----------------------------------------------------------------------
 	if detector.IsGoogleDriveURL(input) {
 		log.Info().Str("url", input).Msg("downloading from Google Drive")
 
@@ -157,6 +226,9 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// -----------------------------------------------------------------------
+	// Local file / directory input
+	// -----------------------------------------------------------------------
 	input = absPath(input)
 	output = absPath(output)
 
