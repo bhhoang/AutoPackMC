@@ -70,6 +70,8 @@ func initConfig() {
 	home, _ := os.UserHomeDir()
 	viper.SetDefault("cache_dir", filepath.Join(home, ".cache", "mcpackctl"))
 	viper.SetDefault("workers", 4)
+	// Public CurseForge API key provided by PolyMC: https://cf.polymc.org/api
+	viper.SetDefault("curseforge_api_key", "$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm")
 
 	_ = viper.ReadInConfig()
 
