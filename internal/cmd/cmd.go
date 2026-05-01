@@ -11,6 +11,7 @@ import (
 	"github.com/bhhoang/AutoPackMC/internal/downloader"
 	"github.com/bhhoang/AutoPackMC/internal/installer"
 	"github.com/bhhoang/AutoPackMC/internal/parser"
+	"github.com/bhhoang/AutoPackMC/internal/resolver"
 	"github.com/bhhoang/AutoPackMC/internal/runtime"
 	"github.com/bhhoang/AutoPackMC/pkg/logger"
 	"github.com/bhhoang/AutoPackMC/pkg/utils"
@@ -45,6 +46,7 @@ func init() {
 	rootCmd.AddCommand(newSetupCmd())
 	rootCmd.AddCommand(newStartCmd())
 	rootCmd.AddCommand(newDownloadCmd())
+	rootCmd.AddCommand(newCleanCmd())
 }
 
 func initConfig() {
@@ -69,6 +71,8 @@ func initConfig() {
 	home, _ := os.UserHomeDir()
 	viper.SetDefault("cache_dir", filepath.Join(home, ".cache", "mcpackctl"))
 	viper.SetDefault("workers", 4)
+	// Public CurseForge API key provided by PolyMC: https://cf.polymc.org/api
+	viper.SetDefault("curseforge_api_key", "$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm")
 
 	_ = viper.ReadInConfig()
 
@@ -81,26 +85,40 @@ func initConfig() {
 
 func newSetupCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "setup --input <pack.zip|dir> --output <serverDir>",
+		Use:   "setup [<curseforge-url>] --input <pack.zip|dir> --output <serverDir>",
 		Short: "Download and configure a modpack server",
-		RunE:  runSetup,
+		Long: `Download and configure a Minecraft modpack server.
+
+Input may be:
+  - A local modpack ZIP or extracted directory (--input flag)
+  - A CurseForge modpack URL (as --input or positional argument)
+    e.g. https://www.curseforge.com/minecraft/modpacks/deceasedcraft`,
+		RunE: runSetup,
 	}
 
-	cmd.Flags().String("input", "", "path to the modpack ZIP or extracted directory (required)")
+	cmd.Flags().String("input", "", "path to the modpack ZIP/dir, or a CurseForge URL")
 	cmd.Flags().String("output", "./server", "destination directory for the server")
 	cmd.Flags().String("ram", "", "JVM max heap size (e.g. 4G)")
 	cmd.Flags().String("java-path", "", "path to java executable")
 	cmd.Flags().String("force-loader", "", "override loader type: forge or fabric")
 	cmd.Flags().Bool("skip-clean", false, "skip removal of client-only mods")
-	_ = cmd.MarkFlagRequired("input")
 
 	return cmd
 }
 
-func runSetup(cmd *cobra.Command, _ []string) error {
+func runSetup(cmd *cobra.Command, args []string) error {
 	log := logger.Get()
 
 	input, _ := cmd.Flags().GetString("input")
+	// Accept a CurseForge URL (or any input) as a positional argument when
+	// --input is not provided.
+	if input == "" && len(args) > 0 {
+		input = args[0]
+	}
+	if input == "" {
+		return fmt.Errorf("provide --input <pack.zip|dir|curseforge-url> or pass the URL as a positional argument")
+	}
+
 	output, _ := cmd.Flags().GetString("output")
 	ram, _ := cmd.Flags().GetString("ram")
 	javaPath, _ := cmd.Flags().GetString("java-path")
@@ -114,6 +132,60 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		javaPath = viper.GetString("java_path")
 	}
 
+	// -----------------------------------------------------------------------
+	// CurseForge URL input
+	// -----------------------------------------------------------------------
+	if resolver.IsCurseForgeURL(input) {
+		log.Info().Str("url", input).Msg("resolving modpack from CurseForge URL")
+
+		apiKey := viper.GetString("curseforge_api_key")
+		res := resolver.New(apiKey)
+
+		downloadURL, err := res.Resolve(input)
+		if err != nil {
+			return fmt.Errorf("resolve CurseForge URL: %w", err)
+		}
+
+		output = absPath(output)
+		if err := utils.EnsureDir(output); err != nil {
+			return fmt.Errorf("create output dir: %w", err)
+		}
+
+		zipPath := filepath.Join(output, "_pack_download.zip")
+		log.Info().Str("url", downloadURL).Str("dest", zipPath).Msg("downloading modpack archive")
+		headers := map[string]string{}
+		if apiKey != "" {
+			headers["x-api-key"] = apiKey
+		}
+		if err := utils.DownloadFile(downloadURL, zipPath, headers); err != nil {
+			return fmt.Errorf("download modpack: %w", err)
+		}
+
+		workDir := filepath.Join(output, "_pack_extracted")
+		log.Info().Str("archive", zipPath).Str("dest", workDir).Msg("extracting pack archive")
+		if err := utils.ExtractArchive(zipPath, workDir); err != nil {
+			return fmt.Errorf("extract archive: %w", err)
+		}
+
+		packType, err := detector.Detect(workDir)
+		if err != nil {
+			return fmt.Errorf("detect pack type: %w", err)
+		}
+		log.Info().Str("type", packType.String()).Msg("detected pack type")
+
+		switch packType {
+		case detector.PackTypeCurseForge:
+			return setupCurseForge(workDir, output, javaPath, forceLoader, skipClean)
+		case detector.PackTypeRaw:
+			return setupRaw(workDir, output, javaPath, forceLoader, skipClean)
+		default:
+			return fmt.Errorf("unsupported pack type: %s", packType)
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Google Drive URL input
+	// -----------------------------------------------------------------------
 	if detector.IsGoogleDriveURL(input) {
 		log.Info().Str("url", input).Msg("downloading from Google Drive")
 
@@ -154,6 +226,9 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// -----------------------------------------------------------------------
+	// Local file / directory input
+	// -----------------------------------------------------------------------
 	input = absPath(input)
 	output = absPath(output)
 
@@ -207,6 +282,11 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 
 	modsDir := filepath.Join(output, "mods")
 
+	apiKey := viper.GetString("curseforge_api_key")
+	cacheDir := viper.GetString("cache_dir")
+	workers := viper.GetInt("workers")
+	dl := downloader.New(cacheDir, apiKey, workers, !skipClean)
+
 	// If the pack already ships a mods/ directory (e.g. a pre-downloaded Google Drive
 	// archive), copy it directly and then download any mods that are listed in the
 	// manifest but absent from that folder.  This handles packs where the cloud
@@ -218,21 +298,11 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 			return fmt.Errorf("copy pre-existing mods: %w", err)
 		}
 
-		apiKey := viper.GetString("curseforge_api_key")
-		cacheDir := viper.GetString("cache_dir")
-		workers := viper.GetInt("workers")
-
-		dl := downloader.New(cacheDir, apiKey, workers)
 		log.Info().Int("count", len(manifest.Files)).Msg("checking manifest mods against pre-existing mods folder")
 		if err := dl.DownloadMissingMods(manifest, modsDir); err != nil {
 			return fmt.Errorf("download missing mods: %w", err)
 		}
 	} else {
-		apiKey := viper.GetString("curseforge_api_key")
-		cacheDir := viper.GetString("cache_dir")
-		workers := viper.GetInt("workers")
-
-		dl := downloader.New(cacheDir, apiKey, workers)
 		log.Info().Int("count", len(manifest.Files)).Msg("downloading mods")
 		if err := dl.DownloadMods(manifest, modsDir); err != nil {
 			return fmt.Errorf("download mods: %w", err)
@@ -249,9 +319,9 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 	}
 
 	if !skipClean {
-		removed, cleanErr := cleaner.Clean(modsDir)
+		removed, cleanErr := dl.CleanMods(manifest, modsDir)
 		if cleanErr != nil {
-			log.Warn().Err(cleanErr).Msg("cleaner encountered an error")
+			log.Warn().Err(cleanErr).Msg("API-based cleaner encountered an error")
 		} else {
 			log.Info().Int("removed", len(removed)).Msg("client-only mods removed")
 		}
@@ -281,14 +351,6 @@ func setupRaw(workDir, output, javaPath, forceLoader string, skipClean bool) err
 		loaderType = forceLoader
 	}
 
-	if loaderType == "" {
-		log.Warn().Msg("loader type unknown for raw pack; skipping loader installation")
-	} else {
-		if err := installer.Install(output, loaderType, mcVersion, loaderVersion, javaPath); err != nil {
-			return fmt.Errorf("install loader: %w", err)
-		}
-	}
-
 	if !skipClean {
 		modsDir := filepath.Join(output, "mods")
 		removed, cleanErr := cleaner.Clean(modsDir)
@@ -296,6 +358,14 @@ func setupRaw(workDir, output, javaPath, forceLoader string, skipClean bool) err
 			log.Warn().Err(cleanErr).Msg("cleaner encountered an error")
 		} else {
 			log.Info().Int("removed", len(removed)).Msg("client-only mods removed")
+		}
+	}
+
+	if loaderType == "" {
+		log.Warn().Msg("loader type unknown for raw pack; skipping loader installation")
+	} else {
+		if err := installer.Install(output, loaderType, mcVersion, loaderVersion, javaPath); err != nil {
+			return fmt.Errorf("install loader: %w", err)
 		}
 	}
 
@@ -332,6 +402,89 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	return runtime.Start(serverDir, ram, javaPath)
+}
+
+// ---------------------------------------------------------------------------
+// clean command
+// ---------------------------------------------------------------------------
+
+func newCleanCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "clean --mods-dir <path>",
+		Short: "Remove client-only mods from a mods directory",
+		Long: `Scans the given mods directory and removes any JAR files that are identified
+as client-only.
+
+When --manifest is provided, the CurseForge API is queried for each mod's
+gameVersions field, which gives an authoritative client/server classification
+and avoids false positives from filename pattern matching.
+
+Without --manifest, a built-in list of known client-only filename patterns is
+used as a fallback.`,
+		RunE: runClean,
+	}
+
+	cmd.Flags().String("mods-dir", "", "path to the mods directory to clean (required)")
+	cmd.Flags().String("manifest", "", "path to a CurseForge manifest.json for API-based detection (recommended)")
+	cmd.Flags().String("api-key", "", "CurseForge API key (falls back to MCPACKCTL_CURSEFORGE_API_KEY / config)")
+	_ = cmd.MarkFlagRequired("mods-dir")
+
+	return cmd
+}
+
+func runClean(cmd *cobra.Command, _ []string) error {
+	log := logger.Get()
+
+	modsDir, _ := cmd.Flags().GetString("mods-dir")
+	modsDir = absPath(modsDir)
+
+	manifestPath, _ := cmd.Flags().GetString("manifest")
+	apiKey, _ := cmd.Flags().GetString("api-key")
+	if apiKey == "" {
+		apiKey = viper.GetString("curseforge_api_key")
+	}
+
+	if manifestPath != "" {
+		manifestPath = absPath(manifestPath)
+		manifestDir := filepath.Dir(manifestPath)
+
+		manifest, err := parser.ParseCurseForge(manifestDir)
+		if err != nil {
+			return fmt.Errorf("parse manifest: %w", err)
+		}
+
+		cacheDir := viper.GetString("cache_dir")
+		workers := viper.GetInt("workers")
+		dl := downloader.New(cacheDir, apiKey, workers, true)
+
+		log.Info().Str("dir", modsDir).Msg("cleaning client-only mods using CurseForge API")
+		removed, err := dl.CleanMods(manifest, modsDir)
+		if err != nil {
+			return fmt.Errorf("clean: %w", err)
+		}
+
+		if len(removed) == 0 {
+			log.Info().Msg("no client-only mods found")
+		} else {
+			log.Info().Int("removed", len(removed)).Msg("client-only mods removed")
+		}
+		return nil
+	}
+
+	log.Warn().Msg("no --manifest provided; falling back to filename pattern matching (may have false positives)")
+	log.Info().Str("dir", modsDir).Msg("cleaning client-only mods using filename patterns")
+
+	removed, err := cleaner.Clean(modsDir)
+	if err != nil {
+		return fmt.Errorf("clean: %w", err)
+	}
+
+	if len(removed) == 0 {
+		log.Info().Msg("no client-only mods found")
+	} else {
+		log.Info().Int("removed", len(removed)).Msg("client-only mods removed")
+	}
+	return nil
 }
 
 func absPath(p string) string {
