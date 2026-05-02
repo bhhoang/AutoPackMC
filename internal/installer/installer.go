@@ -134,6 +134,7 @@ func fetchLatestFabricInstallerVersion() (string, error) {
 		}
 	}
 	if len(versions) > 0 {
+		logger.Get().Warn().Str("version", versions[0].Version).Msg("no stable Fabric installer version found, using latest")
 		return versions[0].Version, nil
 	}
 	return "", fmt.Errorf("no Fabric installer versions found")
