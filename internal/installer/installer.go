@@ -1,7 +1,10 @@
 package installer
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,8 +15,9 @@ import (
 )
 
 const (
-	forgeInstallerURL  = "https://maven.minecraftforge.net/net/minecraftforge/forge/%s-%s/forge-%s-%s-installer.jar"
-	fabricServerJarURL = "https://meta.fabricmc.net/v2/versions/loader/%s/%s/server/jar"
+	forgeInstallerURL        = "https://maven.minecraftforge.net/net/minecraftforge/forge/%s-%s/forge-%s-%s-installer.jar"
+	fabricServerJarURL       = "https://meta.fabricmc.net/v2/versions/loader/%s/%s/%s/server/jar"
+	fabricInstallerVersionURL = "https://meta.fabricmc.net/v2/versions/installer"
 
 	defaultEULA = "eula=true\n"
 	defaultServerProperties = `#Minecraft server properties
@@ -100,10 +104,51 @@ func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
 	return nil
 }
 
+func fetchLatestFabricInstallerVersion() (string, error) {
+	resp, err := http.Get(fabricInstallerVersionURL) // #nosec G107
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d fetching Fabric installer versions", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var versions []struct {
+		Version string `json:"version"`
+		Stable  bool   `json:"stable"`
+	}
+	if err := json.Unmarshal(body, &versions); err != nil {
+		return "", fmt.Errorf("parse Fabric installer versions: %w", err)
+	}
+
+	for _, v := range versions {
+		if v.Stable {
+			return v.Version, nil
+		}
+	}
+	if len(versions) > 0 {
+		logger.Get().Warn().Str("version", versions[0].Version).Msg("no stable Fabric installer version found, using latest")
+		return versions[0].Version, nil
+	}
+	return "", fmt.Errorf("no Fabric installer versions found")
+}
+
 func installFabric(serverDir, mcVersion, loaderVersion string) error {
 	log := logger.Get()
 
-	jarURL := fmt.Sprintf(fabricServerJarURL, mcVersion, loaderVersion)
+	installerVersion, err := fetchLatestFabricInstallerVersion()
+	if err != nil {
+		return fmt.Errorf("fetch Fabric installer version: %w", err)
+	}
+
+	jarURL := fmt.Sprintf(fabricServerJarURL, mcVersion, loaderVersion, installerVersion)
 	dest := filepath.Join(serverDir, "fabric-server-launch.jar")
 
 	log.Info().Str("url", jarURL).Msg("downloading Fabric server jar")
