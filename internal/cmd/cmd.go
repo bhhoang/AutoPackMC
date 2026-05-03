@@ -101,6 +101,7 @@ Input may be:
 	cmd.Flags().String("ram", "", "JVM max heap size (e.g. 4G)")
 	cmd.Flags().String("java-path", "", "path to java executable")
 	cmd.Flags().String("force-loader", "", "override loader type: forge or fabric")
+	cmd.Flags().String("loader-version", "", "override loader version (e.g. 47.4.0)")
 	cmd.Flags().Bool("skip-clean", false, "skip removal of client-only mods")
 
 	return cmd
@@ -123,6 +124,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	ram, _ := cmd.Flags().GetString("ram")
 	javaPath, _ := cmd.Flags().GetString("java-path")
 	forceLoader, _ := cmd.Flags().GetString("force-loader")
+	forceLoaderVersion, _ := cmd.Flags().GetString("loader-version")
 	skipClean, _ := cmd.Flags().GetBool("skip-clean")
 
 	if ram == "" {
@@ -175,9 +177,9 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 		switch packType {
 		case detector.PackTypeCurseForge:
-			return setupCurseForge(workDir, output, javaPath, forceLoader, skipClean)
+			return setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
 		case detector.PackTypeRaw:
-			return setupRaw(workDir, output, javaPath, forceLoader, skipClean)
+			return setupRaw(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
 		default:
 			return fmt.Errorf("unsupported pack type: %s", packType)
 		}
@@ -218,9 +220,9 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 		switch packType {
 		case detector.PackTypeCurseForge:
-			return setupCurseForge(workDir, output, javaPath, forceLoader, skipClean)
+			return setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
 		case detector.PackTypeRaw:
-			return setupRaw(workDir, output, javaPath, forceLoader, skipClean)
+			return setupRaw(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
 		default:
 			return fmt.Errorf("unsupported pack type: %s", packType)
 		}
@@ -250,15 +252,15 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	switch packType {
 	case detector.PackTypeCurseForge:
-		return setupCurseForge(workDir, output, javaPath, forceLoader, skipClean)
+		return setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
 	case detector.PackTypeRaw:
-		return setupRaw(workDir, output, javaPath, forceLoader, skipClean)
+		return setupRaw(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
 	default:
 		return fmt.Errorf("unsupported pack type: %s", packType)
 	}
 }
 
-func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bool) error {
+func setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion string, skipClean bool) error {
 	log := logger.Get()
 
 	manifest, err := parser.ParseCurseForge(workDir)
@@ -278,6 +280,9 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 	loaderVersion := manifest.LoaderVersion
 	if forceLoader != "" {
 		loaderType = forceLoader
+	}
+	if forceLoaderVersion != "" {
+		loaderVersion = forceLoaderVersion
 	}
 
 	modsDir := filepath.Join(output, "mods")
@@ -330,7 +335,7 @@ func setupCurseForge(workDir, output, javaPath, forceLoader string, skipClean bo
 	return installer.Install(output, loaderType, manifest.Minecraft.Version, loaderVersion, javaPath)
 }
 
-func setupRaw(workDir, output, javaPath, forceLoader string, skipClean bool) error {
+func setupRaw(workDir, output, javaPath, forceLoader, forceLoaderVersion string, skipClean bool) error {
 	log := logger.Get()
 
 	rp, err := parser.ParseRaw(workDir)
@@ -349,6 +354,9 @@ func setupRaw(workDir, output, javaPath, forceLoader string, skipClean bool) err
 
 	if forceLoader != "" {
 		loaderType = forceLoader
+	}
+	if forceLoaderVersion != "" {
+		loaderVersion = forceLoaderVersion
 	}
 
 	if !skipClean {

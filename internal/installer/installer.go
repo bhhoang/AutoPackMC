@@ -79,6 +79,12 @@ func Install(serverDir, loaderType, mcVersion, loaderVersion, javaPath string) e
 func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
 	log := logger.Get()
 
+	// Normalize: if the caller passed "1.20.1-47.4.0" instead of just "47.4.0",
+	// strip the "<mcVersion>-" prefix so the URL is always well-formed.
+	if strings.HasPrefix(forgeVersion, mcVersion+"-") {
+		forgeVersion = strings.TrimPrefix(forgeVersion, mcVersion+"-")
+	}
+
 	installerURL := fmt.Sprintf(forgeInstallerURL, mcVersion, forgeVersion, mcVersion, forgeVersion)
 	installerJAR := filepath.Join(serverDir, fmt.Sprintf("forge-%s-%s-installer.jar", mcVersion, forgeVersion))
 
