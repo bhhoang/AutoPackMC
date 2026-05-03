@@ -38,7 +38,7 @@ type Manifest struct {
 	Overrides       string        `json:"overrides"`
 
 	// Derived fields (not in JSON)
-	LoaderType    string // "forge" or "fabric"
+	LoaderType    string // "forge", "neoforge", or "fabric"
 	LoaderVersion string // e.g. "47.2.0"
 }
 

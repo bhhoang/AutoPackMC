@@ -147,8 +147,11 @@ func (r *Resolver) Resolve(input string) (string, error) {
 //  2. Normalized slug/name match (lowercase, spaces and dashes removed)
 //  3. Highest download count among results
 func (r *Resolver) resolveModID(slug string) (int, error) {
-	apiURL := fmt.Sprintf("%s/mods/search?gameId=%d&classId=%d&searchFilter=%s",
-		cfAPIBase, cfGameID, cfClassID, slug)
+	// Include the slug parameter for exact slug matching in addition to the
+	// general searchFilter, which prevents popular unrelated packs from winning
+	// the download-count fallback when the text search returns mixed results.
+	apiURL := fmt.Sprintf("%s/mods/search?gameId=%d&classId=%d&slug=%s&searchFilter=%s",
+		cfAPIBase, cfGameID, cfClassID, slug, slug)
 
 	body, err := r.apiGet(apiURL)
 	if err != nil {
