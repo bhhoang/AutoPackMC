@@ -57,6 +57,7 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 
 	if url != "" {
 		if resolver.IsCurseForgeFileURL(url) {
+			// URL points to a specific file: .../mc-mods/{slug}/files/{fileId}
 			slug, fileID, err := resolver.ExtractFileURL(url)
 			if err != nil {
 				return fmt.Errorf("parse CurseForge URL: %w", err)
@@ -68,6 +69,28 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 				return fmt.Errorf("resolve mod ID for %q: %w", slug, err)
 			}
 			return downloadCurseForgeMod(strconv.Itoa(modIDInt), strconv.Itoa(fileID), output, apiKey)
+		}
+
+		if resolver.IsCurseForgeURL(url) {
+			// URL points to a mod page with no specific file: resolve latest file.
+			log.Info().Str("url", url).Msg("resolving latest file for CurseForge mod")
+			r := resolver.New(apiKey)
+			downloadURL, err := r.Resolve(url)
+			if err != nil {
+				return fmt.Errorf("resolve CurseForge mod: %w", err)
+			}
+			filename := filepath.Base(downloadURL)
+			dest := filepath.Join(output, filename)
+			log.Info().Str("url", downloadURL).Str("dest", dest).Msg("downloading mod")
+			headers := map[string]string{}
+			if apiKey != "" {
+				headers["X-Api-Key"] = apiKey
+			}
+			if err := utils.DownloadFile(downloadURL, dest, headers); err != nil {
+				return fmt.Errorf("download: %w", err)
+			}
+			log.Info().Str("file", dest).Msg("mod downloaded")
+			return nil
 		}
 
 		filename := filepath.Base(url)
