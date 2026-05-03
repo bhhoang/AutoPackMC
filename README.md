@@ -66,8 +66,8 @@ mcpackctl setup --input "https://drive.google.com/file/d/13fyE_SdT0k-j-ucYXGERtQ
 # Custom RAM and Java path
 mcpackctl setup --input pack.zip --output ./server --ram 8G --java-path /usr/lib/jvm/java-21/bin/java
 
-# Force a specific loader and skip client-mod cleaning
-mcpackctl setup --input pack.zip --output ./server --force-loader fabric --skip-clean
+# Force a specific loader and version, skip client-mod cleaning
+mcpackctl setup --input pack.zip --output ./server --force-loader forge --loader-version 47.4.0 --skip-clean
 ```
 
 #### How CurseForge URL resolution works
@@ -160,6 +160,7 @@ export JAVA=/usr/lib/jvm/java-21/bin/java
 | `--ram` | `2G` | JVM max heap (`-Xmx`) |
 | `--java-path` | `java` | Path to `java` executable |
 | `--force-loader` | | Override detected loader (`forge` \| `fabric`) |
+| `--loader-version` | | Override detected loader version (e.g. `47.4.0`) |
 | `--skip-clean` | `false` | Skip client-only mod removal |
 | `--log-level` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
 | `--config` | | Path to config file |
