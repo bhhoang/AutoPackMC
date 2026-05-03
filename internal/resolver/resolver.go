@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,9 +29,36 @@ const (
 //	https://www.curseforge.com/minecraft/mc-mods/jei
 var cfURLRegex = regexp.MustCompile(`(?i)^https?://(?:www\.)?curseforge\.com/minecraft/(?:modpacks|mc-mods)/([a-zA-Z0-9_-]+)`)
 
+// cfFileURLRegex matches CurseForge file URLs and captures the slug and file ID.
+// Example: https://www.curseforge.com/minecraft/mc-mods/easy-mob-farm/files/7957341
+var cfFileURLRegex = regexp.MustCompile(`(?i)^https?://(?:www\.)?curseforge\.com/minecraft/(?:modpacks|mc-mods)/([a-zA-Z0-9_-]+)/files/(\d+)`)
+
 // IsCurseForgeURL reports whether input looks like a CurseForge modpack/mod URL.
 func IsCurseForgeURL(input string) bool {
 	return cfURLRegex.MatchString(input)
+}
+
+// IsCurseForgeFileURL reports whether input looks like a CurseForge specific-file URL.
+func IsCurseForgeFileURL(input string) bool {
+	return cfFileURLRegex.MatchString(input)
+}
+
+// ExtractFileURL extracts the slug and file ID from a CurseForge file URL.
+func ExtractFileURL(input string) (slug string, fileID int, err error) {
+	m := cfFileURLRegex.FindStringSubmatch(input)
+	if len(m) < 3 {
+		return "", 0, fmt.Errorf("cannot extract file info from CurseForge URL %q", input)
+	}
+	id, err := strconv.Atoi(m[2])
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid file ID in URL: %w", err)
+	}
+	return m[1], id, nil
+}
+
+// ResolveModID resolves a slug to a numeric CurseForge mod ID.
+func (r *Resolver) ResolveModID(slug string) (int, error) {
+	return r.resolveModID(slug)
 }
 
 // ExtractSlug extracts the slug segment from a CurseForge URL.
