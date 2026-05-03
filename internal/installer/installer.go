@@ -102,12 +102,26 @@ func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
 	}
 
 	log.Info().Msg("running Forge installer (--installServer)")
-	cmd := exec.Command(javaPath, "-jar", installerJAR, "--installServer") // #nosec G204
-	cmd.Dir = serverDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Forge installer failed: %w", err)
+	var lastErr error
+	const maxForgeInstallAttempts = 3
+	for attempt := 1; attempt <= maxForgeInstallAttempts; attempt++ {
+		cmd := exec.Command(javaPath, "-jar", installerJAR, "--installServer") // #nosec G204
+		cmd.Dir = serverDir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			lastErr = err
+			if attempt < maxForgeInstallAttempts {
+				log.Warn().Err(err).Int("attempt", attempt).Int("maxAttempts", maxForgeInstallAttempts).Msg("Forge installer failed, retrying")
+				continue
+			}
+			return fmt.Errorf("Forge installer failed after %d attempts: %w", maxForgeInstallAttempts, err)
+		}
+		lastErr = nil
+		break
+	}
+	if lastErr != nil {
+		return fmt.Errorf("Forge installer failed: %w", lastErr)
 	}
 
 	// Clean up the installer jar and installer logs
@@ -209,8 +223,10 @@ func WriteRunScript(serverDir, mcVersion, loaderVersion string) error {
 		"set -eu\n" +
 		"DIR=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\"\n" +
 		"if [ -z \"${JAVA:-}\" ]; then\n" +
-		"  if [ -x \"$DIR/jdk-21/bin/java\" ]; then JAVA=\"$DIR/jdk-21/bin/java\";\n" +
-		"  else JAVA=java; fi\n" +
+		"  JAVA=java\n" +
+		"  for CANDIDATE in \"$DIR\"/jdk-*/bin/java; do\n" +
+		"    if [ -x \"$CANDIDATE\" ]; then JAVA=\"$CANDIDATE\"; break; fi\n" +
+		"  done\n" +
 		"fi\n" +
 		"cd \"$DIR\"\n" +
 		"ARGS=\"libraries/net/minecraftforge/forge/" + mcVersion + "-" + loaderVersion + "/unix_args.txt\"\n" +
