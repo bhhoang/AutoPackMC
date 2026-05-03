@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	forgeInstallerURL        = "https://maven.minecraftforge.net/net/minecraftforge/forge/%s-%s/forge-%s-%s-installer.jar"
-	fabricServerJarURL       = "https://meta.fabricmc.net/v2/versions/loader/%s/%s/%s/server/jar"
+	forgeInstallerURL         = "https://maven.minecraftforge.net/net/minecraftforge/forge/%s-%s/forge-%s-%s-installer.jar"
+	fabricServerJarURL        = "https://meta.fabricmc.net/v2/versions/loader/%s/%s/%s/server/jar"
 	fabricInstallerVersionURL = "https://meta.fabricmc.net/v2/versions/installer"
 
-	defaultEULA = "eula=true\n"
+	defaultEULA             = "eula=true\n"
 	defaultServerProperties = `#Minecraft server properties
 server-port=25565
 online-mode=true
@@ -102,12 +102,26 @@ func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
 	}
 
 	log.Info().Msg("running Forge installer (--installServer)")
-	cmd := exec.Command(javaPath, "-jar", installerJAR, "--installServer") // #nosec G204
-	cmd.Dir = serverDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Forge installer failed: %w", err)
+	var lastErr error
+	const maxForgeInstallAttempts = 3
+	for attempt := 1; attempt <= maxForgeInstallAttempts; attempt++ {
+		cmd := exec.Command(javaPath, "-jar", installerJAR, "--installServer") // #nosec G204
+		cmd.Dir = serverDir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			lastErr = err
+			if attempt < maxForgeInstallAttempts {
+				log.Warn().Err(err).Int("attempt", attempt).Int("maxAttempts", maxForgeInstallAttempts).Msg("Forge installer failed, retrying")
+				continue
+			}
+			return fmt.Errorf("Forge installer failed after %d attempts: %w", maxForgeInstallAttempts, err)
+		}
+		lastErr = nil
+		break
+	}
+	if lastErr != nil {
+		return fmt.Errorf("Forge installer failed: %w", lastErr)
 	}
 
 	// Clean up the installer jar and installer logs
@@ -206,8 +220,23 @@ func WriteRunScript(serverDir, mcVersion, loaderVersion string) error {
 
 	content := "#!/usr/bin/env sh\n" +
 		"# Minecraft server startup script\n" +
-		"# Java path can be customized below or set via environment variable\n" +
-		"JAVA=\"${JAVA:-java}\"\n" +
-		"exec \"${JAVA}\" @user_jvm_args.txt @libraries/net/minecraftforge/forge/" + mcVersion + "-" + loaderVersion + "/unix_args.txt \"$@\"\n"
+		"set -eu\n" +
+		"DIR=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\"\n" +
+		"if [ -z \"${JAVA:-}\" ]; then\n" +
+		"  JAVA=java\n" +
+		"  for CANDIDATE in \"$DIR\"/jdk-*/bin/java; do\n" +
+		"    if [ -x \"$CANDIDATE\" ]; then JAVA=\"$CANDIDATE\"; break; fi\n" +
+		"  done\n" +
+		"fi\n" +
+		"cd \"$DIR\"\n" +
+		"ARGS=\"libraries/net/minecraftforge/forge/" + mcVersion + "-" + loaderVersion + "/unix_args.txt\"\n" +
+		"if [ -f \"$ARGS\" ]; then\n" +
+		"  [ -f user_jvm_args.txt ] || : > user_jvm_args.txt\n" +
+		"  exec \"$JAVA\" @user_jvm_args.txt @\"$ARGS\" \"$@\"\n" +
+		"fi\n" +
+		"LEGACY=\"minecraftforge-universal-" + mcVersion + "-" + loaderVersion + "-v" + strings.ReplaceAll(mcVersion, ".", "") + "-pregradle.jar\"\n" +
+		"if [ -f \"$LEGACY\" ]; then exec \"$JAVA\" -jar \"$LEGACY\" nogui \"$@\"; fi\n" +
+		"echo \"No Forge startup target found.\" >&2\n" +
+		"exit 1\n"
 	return os.WriteFile(runShPath, []byte(content), 0o755)
 }
