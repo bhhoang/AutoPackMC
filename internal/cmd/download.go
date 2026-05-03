@@ -63,11 +63,32 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 			}
 			log.Info().Str("slug", slug).Int("fileID", fileID).Msg("resolving CurseForge mod ID from URL")
 			r := resolver.New(apiKey)
-			modIDInt, err := r.ResolveModID(slug)
+			modIDInt, err := r.ResolveModID(slug, resolver.ClassIDFromURL(url))
 			if err != nil {
 				return fmt.Errorf("resolve mod ID for %q: %w", slug, err)
 			}
 			return downloadCurseForgeMod(strconv.Itoa(modIDInt), strconv.Itoa(fileID), output, apiKey)
+		}
+
+		if resolver.IsCurseForgeURL(url) {
+			log.Info().Str("url", url).Msg("resolving latest file from CurseForge mod page")
+			r := resolver.New(apiKey)
+			downloadURL, err := r.Resolve(url)
+			if err != nil {
+				return fmt.Errorf("resolve mod URL: %w", err)
+			}
+			filename := filepath.Base(downloadURL)
+			dest := filepath.Join(output, filename)
+			log.Info().Str("url", url).Str("dest", dest).Msg("downloading mod")
+			headers := map[string]string{}
+			if apiKey != "" {
+				headers["X-Api-Key"] = apiKey
+			}
+			if err := utils.DownloadFile(downloadURL, dest, headers); err != nil {
+				return fmt.Errorf("download: %w", err)
+			}
+			log.Info().Str("file", dest).Msg("mod downloaded")
+			return nil
 		}
 
 		filename := filepath.Base(url)

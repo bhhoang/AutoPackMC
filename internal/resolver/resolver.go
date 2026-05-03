@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	cfAPIBase  = "https://api.curseforge.com/v1"
-	cfGameID   = 432  // Minecraft
-	cfClassID  = 4471 // Modpacks
-	maxRetries = 3
+	cfAPIBase    = "https://api.curseforge.com/v1"
+	cfGameID     = 432  // Minecraft
+	cfClassID    = 4471 // Modpacks
+	cfModClassID = 6    // Individual mods
+	maxRetries   = 3
 )
 
 // cfURLRegex matches CurseForge modpack/mod URLs and captures the slug.
@@ -36,6 +37,15 @@ var cfFileURLRegex = regexp.MustCompile(`(?i)^https?://(?:www\.)?curseforge\.com
 // IsCurseForgeURL reports whether input looks like a CurseForge modpack/mod URL.
 func IsCurseForgeURL(input string) bool {
 	return cfURLRegex.MatchString(input)
+}
+
+// ClassIDFromURL returns the CurseForge class ID for the content type in the URL:
+// 6 for mc-mods, 4471 for modpacks.
+func ClassIDFromURL(input string) int {
+	if strings.Contains(strings.ToLower(input), "/mc-mods/") {
+		return cfModClassID
+	}
+	return cfClassID
 }
 
 // IsCurseForgeFileURL reports whether input looks like a CurseForge specific-file URL.
@@ -57,8 +67,9 @@ func ExtractFileURL(input string) (slug string, fileID int, err error) {
 }
 
 // ResolveModID resolves a slug to a numeric CurseForge mod ID.
-func (r *Resolver) ResolveModID(slug string) (int, error) {
-	return r.resolveModID(slug)
+// classID filters by content type (4471=modpack, 6=mod).
+func (r *Resolver) ResolveModID(slug string, classID int) (int, error) {
+	return r.resolveModID(slug, classID)
 }
 
 // ExtractSlug extracts the slug segment from a CurseForge URL.
@@ -131,7 +142,7 @@ func (r *Resolver) Resolve(input string) (string, error) {
 	}
 	log.Info().Str("slug", slug).Msg("[resolver] Searching mod")
 
-	modID, err := r.resolveModID(slug)
+	modID, err := r.resolveModID(slug, ClassIDFromURL(input))
 	if err != nil {
 		return "", err
 	}
@@ -174,12 +185,12 @@ func (r *Resolver) Resolve(input string) (string, error) {
 //  1. Exact slug match
 //  2. Normalized slug/name match (lowercase, spaces and dashes removed)
 //  3. Highest download count among results
-func (r *Resolver) resolveModID(slug string) (int, error) {
+func (r *Resolver) resolveModID(slug string, classID int) (int, error) {
 	// Include the slug parameter for exact slug matching in addition to the
 	// general searchFilter, which prevents popular unrelated packs from winning
 	// the download-count fallback when the text search returns mixed results.
 	apiURL := fmt.Sprintf("%s/mods/search?gameId=%d&classId=%d&slug=%s&searchFilter=%s",
-		cfAPIBase, cfGameID, cfClassID, slug, slug)
+		cfAPIBase, cfGameID, classID, slug, slug)
 
 	body, err := r.apiGet(apiURL)
 	if err != nil {
