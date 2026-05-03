@@ -10,6 +10,7 @@ import (
 	"github.com/bhhoang/AutoPackMC/internal/detector"
 	"github.com/bhhoang/AutoPackMC/internal/downloader"
 	"github.com/bhhoang/AutoPackMC/internal/installer"
+	"github.com/bhhoang/AutoPackMC/internal/java"
 	"github.com/bhhoang/AutoPackMC/internal/parser"
 	"github.com/bhhoang/AutoPackMC/internal/resolver"
 	"github.com/bhhoang/AutoPackMC/internal/runtime"
@@ -100,6 +101,7 @@ Input may be:
 	cmd.Flags().String("output", "./server", "destination directory for the server")
 	cmd.Flags().String("ram", "", "JVM max heap size (e.g. 4G)")
 	cmd.Flags().String("java-path", "", "path to java executable")
+	cmd.Flags().Int("java-version", 0, "automatically download this Java major version (e.g. 21) into the server directory")
 	cmd.Flags().String("force-loader", "", "override loader type: forge or fabric")
 	cmd.Flags().String("loader-version", "", "override loader version (e.g. 47.4.0)")
 	cmd.Flags().Bool("skip-clean", false, "skip removal of client-only mods")
@@ -123,6 +125,8 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
 	ram, _ := cmd.Flags().GetString("ram")
 	javaPath, _ := cmd.Flags().GetString("java-path")
+	javaPathExplicit := cmd.Flags().Changed("java-path")
+	javaVersion, _ := cmd.Flags().GetInt("java-version")
 	forceLoader, _ := cmd.Flags().GetString("force-loader")
 	forceLoaderVersion, _ := cmd.Flags().GetString("loader-version")
 	skipClean, _ := cmd.Flags().GetBool("skip-clean")
@@ -153,8 +157,12 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("create output dir: %w", err)
 		}
 
+		javaPath, err = resolveJavaPath(javaPath, javaPathExplicit, javaVersion, output)
+		if err != nil {
+			return fmt.Errorf("resolve java path: %w", err)
+		}
+
 		zipPath := filepath.Join(output, "_pack_download.zip")
-		log.Info().Str("url", downloadURL).Str("dest", zipPath).Msg("downloading modpack archive")
 		headers := map[string]string{}
 		if apiKey != "" {
 			headers["x-api-key"] = apiKey
@@ -201,6 +209,11 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("create output dir: %w", err)
 		}
 
+		javaPath, err = resolveJavaPath(javaPath, javaPathExplicit, javaVersion, output)
+		if err != nil {
+			return fmt.Errorf("resolve java path: %w", err)
+		}
+
 		zipPath := filepath.Join(output, "_pack_download.zip")
 		if err := utils.DownloadGoogleDriveFile(fileID, zipPath); err != nil {
 			return fmt.Errorf("download Google Drive file: %w", err)
@@ -233,6 +246,12 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	// -----------------------------------------------------------------------
 	input = absPath(input)
 	output = absPath(output)
+
+	if resolvedJava, resolveErr := resolveJavaPath(javaPath, javaPathExplicit, javaVersion, output); resolveErr != nil {
+		return fmt.Errorf("resolve java path: %w", resolveErr)
+	} else {
+		javaPath = resolvedJava
+	}
 
 	workDir := input
 
@@ -394,6 +413,7 @@ func newStartCmd() *cobra.Command {
 
 	cmd.Flags().String("ram", "", "JVM max heap size (e.g. 4G)")
 	cmd.Flags().String("java-path", "", "path to java executable")
+	cmd.Flags().Int("java-version", 0, "automatically download this Java major version (e.g. 21) into the server directory")
 	return cmd
 }
 
@@ -401,6 +421,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 	serverDir := absPath(args[0])
 	ram, _ := cmd.Flags().GetString("ram")
 	javaPath, _ := cmd.Flags().GetString("java-path")
+	javaPathExplicit := cmd.Flags().Changed("java-path")
+	javaVersion, _ := cmd.Flags().GetInt("java-version")
 
 	if ram == "" {
 		ram = viper.GetString("ram")
@@ -409,7 +431,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 		javaPath = viper.GetString("java_path")
 	}
 
-	return runtime.Start(serverDir, ram, javaPath)
+	resolvedJava, err := resolveJavaPath(javaPath, javaPathExplicit, javaVersion, serverDir)
+	if err != nil {
+		return fmt.Errorf("resolve java path: %w", err)
+	}
+
+	return runtime.Start(serverDir, ram, resolvedJava)
 }
 
 // ---------------------------------------------------------------------------
@@ -501,4 +528,18 @@ func absPath(p string) string {
 		return p
 	}
 	return abs
+}
+
+// resolveJavaPath returns the java executable path to use.
+// If javaVersion > 0 and javaPath was not explicitly provided by the user,
+// it downloads the specified Eclipse Temurin JDK into serverDir and returns
+// the path to its java binary.
+func resolveJavaPath(javaPath string, javaPathExplicit bool, javaVersion int, serverDir string) (string, error) {
+	if javaVersion <= 0 || javaPathExplicit {
+		return javaPath, nil
+	}
+	if err := utils.EnsureDir(serverDir); err != nil {
+		return "", fmt.Errorf("create server dir: %w", err)
+	}
+	return java.Download(javaVersion, serverDir)
 }

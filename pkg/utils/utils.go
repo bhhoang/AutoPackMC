@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -179,6 +181,68 @@ func copyFile(src, dest string, mode os.FileMode) error {
 
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// ExtractTarGz extracts a .tar.gz archive from src into the dest directory.
+func ExtractTarGz(src, dest string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open tar.gz %q: %w", src, err)
+	}
+	defer f.Close()
+
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("gzip reader for %q: %w", src, err)
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
+
+	if err := EnsureDir(dest); err != nil {
+		return err
+	}
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read tar entry: %w", err)
+		}
+
+		target := filepath.Join(dest, filepath.FromSlash(header.Name))
+
+		// Guard against path traversal
+		if !isSubPath(dest, target) {
+			return fmt.Errorf("tar entry %q escapes destination directory", header.Name)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := EnsureDir(target); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := EnsureDir(filepath.Dir(target)); err != nil {
+				return err
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, header.FileInfo().Mode())
+			if err != nil {
+				return fmt.Errorf("create %q: %w", target, err)
+			}
+			if _, err := io.Copy(out, tr); err != nil { // #nosec G110 — controlled tar extraction
+				out.Close()
+				return fmt.Errorf("write %q: %w", target, err)
+			}
+			out.Close()
+			// Symbolic links are intentionally skipped. Extracting symlinks from
+			// untrusted archives carries path-traversal risk and is not required
+			// for the JDK binaries this function is designed to unpack.
+		}
+	}
+	return nil
 }
 
 // FindFiles returns all files under dir whose base name matches the glob pattern.
