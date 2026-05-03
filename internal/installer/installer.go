@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	forgeInstallerURL        = "https://maven.minecraftforge.net/net/minecraftforge/forge/%s-%s/forge-%s-%s-installer.jar"
-	fabricServerJarURL       = "https://meta.fabricmc.net/v2/versions/loader/%s/%s/%s/server/jar"
+	forgeInstallerURL         = "https://maven.minecraftforge.net/net/minecraftforge/forge/%s-%s/forge-%s-%s-installer.jar"
+	fabricServerJarURL        = "https://meta.fabricmc.net/v2/versions/loader/%s/%s/%s/server/jar"
 	fabricInstallerVersionURL = "https://meta.fabricmc.net/v2/versions/installer"
 
-	defaultEULA = "eula=true\n"
+	defaultEULA             = "eula=true\n"
 	defaultServerProperties = `#Minecraft server properties
 server-port=25565
 online-mode=true
@@ -206,8 +206,21 @@ func WriteRunScript(serverDir, mcVersion, loaderVersion string) error {
 
 	content := "#!/usr/bin/env sh\n" +
 		"# Minecraft server startup script\n" +
-		"# Java path can be customized below or set via environment variable\n" +
-		"JAVA=\"${JAVA:-java}\"\n" +
-		"exec \"${JAVA}\" @user_jvm_args.txt @libraries/net/minecraftforge/forge/" + mcVersion + "-" + loaderVersion + "/unix_args.txt \"$@\"\n"
+		"set -eu\n" +
+		"DIR=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\"\n" +
+		"if [ -z \"${JAVA:-}\" ]; then\n" +
+		"  if [ -x \"$DIR/jdk-21/bin/java\" ]; then JAVA=\"$DIR/jdk-21/bin/java\";\n" +
+		"  else JAVA=java; fi\n" +
+		"fi\n" +
+		"cd \"$DIR\"\n" +
+		"ARGS=\"libraries/net/minecraftforge/forge/" + mcVersion + "-" + loaderVersion + "/unix_args.txt\"\n" +
+		"if [ -f \"$ARGS\" ]; then\n" +
+		"  [ -f user_jvm_args.txt ] || : > user_jvm_args.txt\n" +
+		"  exec \"$JAVA\" @user_jvm_args.txt @\"$ARGS\" \"$@\"\n" +
+		"fi\n" +
+		"LEGACY=\"minecraftforge-universal-" + mcVersion + "-" + loaderVersion + "-v" + strings.ReplaceAll(mcVersion, ".", "") + "-pregradle.jar\"\n" +
+		"if [ -f \"$LEGACY\" ]; then exec \"$JAVA\" -jar \"$LEGACY\" nogui \"$@\"; fi\n" +
+		"echo \"No Forge startup target found.\" >&2\n" +
+		"exit 1\n"
 	return os.WriteFile(runShPath, []byte(content), 0o755)
 }
