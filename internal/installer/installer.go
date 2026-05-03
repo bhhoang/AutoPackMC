@@ -16,6 +16,7 @@ import (
 
 const (
 	forgeInstallerURL         = "https://maven.minecraftforge.net/net/minecraftforge/forge/%s-%s/forge-%s-%s-installer.jar"
+	neoForgeInstallerURL      = "https://maven.neoforged.net/releases/net/neoforged/neoforge/%s/neoforge-%s-installer.jar"
 	fabricServerJarURL        = "https://meta.fabricmc.net/v2/versions/loader/%s/%s/%s/server/jar"
 	fabricInstallerVersionURL = "https://meta.fabricmc.net/v2/versions/installer"
 
@@ -55,8 +56,12 @@ func Install(serverDir, loaderType, mcVersion, loaderVersion, javaPath string) e
 		Msg("installing server")
 
 	switch strings.ToLower(loaderType) {
-	case "forge", "neoforge":
+	case "forge":
 		if err := installForge(serverDir, mcVersion, loaderVersion, javaPath); err != nil {
+			return err
+		}
+	case "neoforge":
+		if err := installNeoForge(serverDir, mcVersion, loaderVersion, javaPath); err != nil {
 			return err
 		}
 	case "fabric":
@@ -73,7 +78,7 @@ func Install(serverDir, loaderType, mcVersion, loaderVersion, javaPath string) e
 	if err := writeServerProperties(serverDir); err != nil {
 		return err
 	}
-	return WriteRunScript(serverDir, mcVersion, loaderVersion)
+	return WriteRunScript(serverDir, strings.ToLower(loaderType), mcVersion, loaderVersion)
 }
 
 func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
@@ -168,6 +173,31 @@ func fetchLatestFabricInstallerVersion() (string, error) {
 	return "", fmt.Errorf("no Fabric installer versions found")
 }
 
+func installNeoForge(serverDir, mcVersion, neoForgeVersion, javaPath string) error {
+	log := logger.Get()
+	installerURL := fmt.Sprintf(neoForgeInstallerURL, neoForgeVersion, neoForgeVersion)
+	installerJAR := filepath.Join(serverDir, fmt.Sprintf("neoforge-%s-installer.jar", neoForgeVersion))
+
+	log.Info().Str("url", installerURL).Msg("downloading NeoForge installer")
+	if err := utils.DownloadFile(installerURL, installerJAR, nil); err != nil {
+		return fmt.Errorf("download NeoForge installer: %w", err)
+	}
+
+	log.Info().Msg("running NeoForge installer (--installServer)")
+	cmd := exec.Command(javaPath, "-jar", installerJAR, "--installServer") // #nosec G204
+	cmd.Dir = serverDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("NeoForge installer failed: %w", err)
+	}
+
+	_ = os.Remove(installerJAR)
+	_ = os.Remove(installerJAR + ".log")
+	log.Info().Msg("NeoForge server installed")
+	return nil
+}
+
 func installFabric(serverDir, mcVersion, loaderVersion string) error {
 	log := logger.Get()
 
@@ -212,10 +242,15 @@ func writeServerProperties(serverDir string) error {
 	return os.WriteFile(propsPath, []byte(defaultServerProperties), 0o644)
 }
 
-func WriteRunScript(serverDir, mcVersion, loaderVersion string) error {
+func WriteRunScript(serverDir, loaderType, mcVersion, loaderVersion string) error {
 	runShPath := filepath.Join(serverDir, "run.sh")
 	if utils.FileExists(runShPath) {
 		return nil
+	}
+
+	argsPath := "libraries/net/minecraftforge/forge/" + mcVersion + "-" + loaderVersion + "/unix_args.txt"
+	if loaderType == "neoforge" {
+		argsPath = "libraries/net/neoforged/neoforge/" + loaderVersion + "/unix_args.txt"
 	}
 
 	content := "#!/usr/bin/env sh\n" +
@@ -229,14 +264,14 @@ func WriteRunScript(serverDir, mcVersion, loaderVersion string) error {
 		"  done\n" +
 		"fi\n" +
 		"cd \"$DIR\"\n" +
-		"ARGS=\"libraries/net/minecraftforge/forge/" + mcVersion + "-" + loaderVersion + "/unix_args.txt\"\n" +
+		"ARGS=\"" + argsPath + "\"\n" +
 		"if [ -f \"$ARGS\" ]; then\n" +
 		"  [ -f user_jvm_args.txt ] || : > user_jvm_args.txt\n" +
 		"  exec \"$JAVA\" @user_jvm_args.txt @\"$ARGS\" \"$@\"\n" +
 		"fi\n" +
 		"LEGACY=\"minecraftforge-universal-" + mcVersion + "-" + loaderVersion + "-v" + strings.ReplaceAll(mcVersion, ".", "") + "-pregradle.jar\"\n" +
 		"if [ -f \"$LEGACY\" ]; then exec \"$JAVA\" -jar \"$LEGACY\" nogui \"$@\"; fi\n" +
-		"echo \"No Forge startup target found.\" >&2\n" +
+		"echo \"No startup target found for " + loaderType + ".\" >&2\n" +
 		"exit 1\n"
 	return os.WriteFile(runShPath, []byte(content), 0o755)
 }
