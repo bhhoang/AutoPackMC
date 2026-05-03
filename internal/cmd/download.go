@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/bhhoang/AutoPackMC/internal/resolver"
 	"github.com/bhhoang/AutoPackMC/pkg/logger"
 	"github.com/bhhoang/AutoPackMC/pkg/utils"
 	"github.com/spf13/cobra"
@@ -55,6 +56,20 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 	}
 
 	if url != "" {
+		if resolver.IsCurseForgeFileURL(url) {
+			slug, fileID, err := resolver.ExtractFileURL(url)
+			if err != nil {
+				return fmt.Errorf("parse CurseForge URL: %w", err)
+			}
+			log.Info().Str("slug", slug).Int("fileID", fileID).Msg("resolving CurseForge mod ID from URL")
+			r := resolver.New(apiKey)
+			modIDInt, err := r.ResolveModID(slug)
+			if err != nil {
+				return fmt.Errorf("resolve mod ID for %q: %w", slug, err)
+			}
+			return downloadCurseForgeMod(strconv.Itoa(modIDInt), strconv.Itoa(fileID), output, apiKey)
+		}
+
 		filename := filepath.Base(url)
 		dest := filepath.Join(output, filename)
 		log.Info().Str("url", url).Str("dest", dest).Msg("downloading file")
