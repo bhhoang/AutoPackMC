@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,9 @@ type Downloader struct {
 	CacheDir         string
 	APIKey           string
 	FilterClientOnly bool // when true, mods tagged Client-only (no Server tag) are skipped
+
+	fileInfoMu    sync.RWMutex
+	fileInfoCache map[string]*FileInfo
 }
 
 // New creates a Downloader with sensible defaults.
@@ -71,6 +75,7 @@ func New(cacheDir, apiKey string, workers int, filterClientOnly bool) *Downloade
 		CacheDir:         cacheDir,
 		APIKey:           apiKey,
 		FilterClientOnly: filterClientOnly,
+		fileInfoCache:    make(map[string]*FileInfo),
 	}
 }
 
@@ -102,13 +107,13 @@ func (d *Downloader) DownloadMods(manifest *parser.Manifest, destDir string) err
 			defer wg.Done()
 			for t := range tasks {
 				if err := d.downloadMod(t); err != nil {
-					if t.Required {
+					if t.Required && !isNotFoundErr(err) {
 						errs <- err
 					} else {
 						log.Warn().Err(err).
 							Int("projectID", t.ProjectID).
 							Int("fileID", t.FileID).
-							Msg("optional mod download failed, skipping")
+							Msg("mod download failed, skipping")
 					}
 				}
 			}
@@ -205,8 +210,20 @@ func (d *Downloader) downloadMod(t Task) error {
 
 // fetchFileInfo fetches file metadata (filename, download URL, and game versions)
 // from the CurseForge public API.
+func fileInfoCacheKey(projectID, fileID int) string {
+	return fmt.Sprintf("%d/%d", projectID, fileID)
+}
+
 func (d *Downloader) fetchFileInfo(projectID, fileID int) (*FileInfo, error) {
 	log := logger.Get()
+
+	cacheKey := fileInfoCacheKey(projectID, fileID)
+	d.fileInfoMu.RLock()
+	if cached, ok := d.fileInfoCache[cacheKey]; ok {
+		d.fileInfoMu.RUnlock()
+		return cached, nil
+	}
+	d.fileInfoMu.RUnlock()
 
 	fileInfoURL := fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d", projectID, fileID)
 	resp, err := http.Get(fileInfoURL)
@@ -236,6 +253,10 @@ func (d *Downloader) fetchFileInfo(projectID, fileID int) (*FileInfo, error) {
 		GameVersions: result.Data.GameVersions,
 	}
 
+	d.fileInfoMu.Lock()
+	d.fileInfoCache[cacheKey] = fi
+	d.fileInfoMu.Unlock()
+
 	log.Debug().
 		Int("projectID", projectID).
 		Int("fileID", fileID).
@@ -258,6 +279,13 @@ func downloadWithRetry(url, dest string, headers map[string]string) error {
 		}
 	}
 	return lastErr
+}
+
+func isNotFoundErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "HTTP 404")
 }
 
 func copyFileSimple(src, dst string) error {
@@ -368,13 +396,13 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 			defer wg.Done()
 			for t := range taskCh {
 				if err := d.downloadMod(t); err != nil {
-					if t.Required {
+					if t.Required && !isNotFoundErr(err) {
 						errs <- err
 					} else {
 						log.Warn().Err(err).
 							Int("projectID", t.ProjectID).
 							Int("fileID", t.FileID).
-							Msg("optional mod download failed, skipping")
+							Msg("mod download failed, skipping")
 					}
 				}
 			}
