@@ -81,8 +81,16 @@ func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
 
 	// Normalize: if the caller passed "1.20.1-47.4.0" instead of just "47.4.0",
 	// strip the "<mcVersion>-" prefix so the URL is always well-formed.
-	if strings.HasPrefix(forgeVersion, mcVersion+"-") {
+	if mcVersion != "" && strings.HasPrefix(forgeVersion, mcVersion+"-") {
 		forgeVersion = strings.TrimPrefix(forgeVersion, mcVersion+"-")
+	} else if mcVersion == "" {
+		// When mcVersion is not provided but forgeVersion is in the combined
+		// "<mcVersion>-<forgeVersion>" format (e.g. "1.20.1-47.4.0"), extract
+		// mcVersion from the prefix so the installer URL is well-formed.
+		if idx := strings.Index(forgeVersion, "-"); idx != -1 {
+			mcVersion = forgeVersion[:idx]
+			forgeVersion = forgeVersion[idx+1:]
+		}
 	}
 
 	installerURL := fmt.Sprintf(forgeInstallerURL, mcVersion, forgeVersion, mcVersion, forgeVersion)
