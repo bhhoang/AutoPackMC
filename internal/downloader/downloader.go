@@ -85,6 +85,11 @@ type Downloader struct {
 	failed       []FailedMod
 	modInfoCache map[int]modInfo // guarded by failedMu
 
+	// Projects skipped because the exclude list marks them client-only,
+	// mapped to their slugs. Set by ApplyExcludeList.
+	excludedMu       sync.RWMutex
+	excludedProjects map[int]string
+
 	// Endpoints, overridable in tests.
 	siteAPIBase     string
 	officialAPIBase string
@@ -195,6 +200,10 @@ func (d *Downloader) downloadMod(t Task) error {
 		filename = t.ResolvedFilename
 		downloadURL = fmt.Sprintf("%s/mods/%d/files/%d/download", d.siteAPIBase, t.ProjectID, t.FileID)
 	} else {
+		if slug, ok := d.excludedSlug(t.ProjectID); ok && d.FilterClientOnly {
+			logExcludedSkip(t.ProjectID, t.FileID, slug)
+			return nil
+		}
 		fi, err := d.fetchFileInfo(t.ProjectID, t.FileID)
 		if err != nil {
 			return err
@@ -503,6 +512,11 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 
 	var tasks []Task
 	for _, f := range manifest.Files {
+		if slug, ok := d.excludedSlug(f.ProjectID); ok && d.FilterClientOnly {
+			logExcludedSkip(f.ProjectID, f.FileID, slug)
+			continue
+		}
+
 		// Fast-path: check for the cache-style name (<projectID>-<fileID>.jar)
 		// which is used when the real filename was not yet known at download time.
 		if existingFiles[fmt.Sprintf(cacheKeyFormat, f.ProjectID, f.FileID)] {
@@ -604,7 +618,8 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 // CleanMods removes client-only mod JARs from modsDir using the CurseForge API
 // to determine each mod's server/client classification. It cross-references every
 // file listed in manifest against the mods already present in modsDir and deletes
-// those whose gameVersions indicate client-only. Returns the list of removed filenames.
+// those whose gameVersions indicate client-only or that the exclude list names.
+// Returns the list of removed filenames.
 func (d *Downloader) CleanMods(manifest *parser.Manifest, modsDir string) ([]string, error) {
 	log := logger.Get()
 
@@ -624,7 +639,8 @@ func (d *Downloader) CleanMods(manifest *parser.Manifest, modsDir string) ([]str
 			continue
 		}
 
-		if !fi.IsClientOnly() {
+		excludedSlug, excluded := d.excludedSlug(f.ProjectID)
+		if !fi.IsClientOnly() && !excluded {
 			continue
 		}
 
@@ -642,6 +658,7 @@ func (d *Downloader) CleanMods(manifest *parser.Manifest, modsDir string) ([]str
 			Int("fileID", f.FileID).
 			Str("file", fi.FileName).
 			Strs("gameVersions", fi.GameVersions).
+			Str("excludeListSlug", excludedSlug).
 			Msg("removed client-only mod")
 		removed = append(removed, fi.FileName)
 	}
