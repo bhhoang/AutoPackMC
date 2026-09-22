@@ -78,7 +78,10 @@ func Install(serverDir, loaderType, mcVersion, loaderVersion, javaPath string) e
 	if err := writeServerProperties(serverDir); err != nil {
 		return err
 	}
-	return WriteRunScript(serverDir, strings.ToLower(loaderType), mcVersion, loaderVersion)
+	if err := WriteRunScript(serverDir, strings.ToLower(loaderType), mcVersion, loaderVersion); err != nil {
+		return err
+	}
+	return UsePortableJava(serverDir, javaPath)
 }
 
 func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
