@@ -67,11 +67,13 @@ func initConfig() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	// Defaults
-	viper.SetDefault("ram", "2G")
 	viper.SetDefault("java_path", "java")
 	home, _ := os.UserHomeDir()
 	viper.SetDefault("cache_dir", filepath.Join(home, ".cache", "mcpackctl"))
 	viper.SetDefault("workers", 4)
+	// List of client-only CurseForge projects to leave off servers; a URL or a
+	// local path in the cf-exclude-include.json format. Empty disables it.
+	viper.SetDefault("cf_exclude_include_file", downloader.DefaultExcludeListURL)
 	// Public CurseForge API key provided by PolyMC: https://cf.polymc.org/api
 	viper.SetDefault("curseforge_api_key", "$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm")
 
@@ -134,8 +136,27 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	if ram == "" {
 		ram = viper.GetString("ram")
 	}
+	if ram != "" && !installer.ValidHeapSize(ram) {
+		return fmt.Errorf("invalid --ram %q (expected e.g. 4G or 2048M)", ram)
+	}
 	if javaPath == "" {
 		javaPath = viper.GetString("java_path")
+	}
+	autoJava := isAutoJava(javaPath, javaPathExplicit, javaVersion)
+
+	// opts captures output and javaPath as resolved by the time a branch
+	// below hands over to the pack-specific setup.
+	opts := func(packSlug string) setupOptions {
+		return setupOptions{
+			output:             output,
+			packSlug:           packSlug,
+			javaPath:           javaPath,
+			autoJava:           autoJava,
+			forceLoader:        forceLoader,
+			forceLoaderVersion: forceLoaderVersion,
+			skipClean:          skipClean,
+			ram:                ram,
+		}
 	}
 
 	// -----------------------------------------------------------------------
@@ -183,11 +204,14 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		}
 		log.Info().Str("type", packType.String()).Msg("detected pack type")
 
+		// The pack slug selects per-modpack entries in the exclude list.
+		packSlug, _ := resolver.ExtractSlug(input)
+
 		switch packType {
 		case detector.PackTypeCurseForge:
-			return setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
+			return setupCurseForge(workDir, opts(packSlug))
 		case detector.PackTypeRaw:
-			return setupRaw(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
+			return setupRaw(workDir, opts(""))
 		default:
 			return fmt.Errorf("unsupported pack type: %s", packType)
 		}
@@ -233,9 +257,9 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 		switch packType {
 		case detector.PackTypeCurseForge:
-			return setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
+			return setupCurseForge(workDir, opts(""))
 		case detector.PackTypeRaw:
-			return setupRaw(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
+			return setupRaw(workDir, opts(""))
 		default:
 			return fmt.Errorf("unsupported pack type: %s", packType)
 		}
@@ -271,16 +295,30 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	switch packType {
 	case detector.PackTypeCurseForge:
-		return setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
+		return setupCurseForge(workDir, opts(""))
 	case detector.PackTypeRaw:
-		return setupRaw(workDir, output, javaPath, forceLoader, forceLoaderVersion, skipClean)
+		return setupRaw(workDir, opts(""))
 	default:
 		return fmt.Errorf("unsupported pack type: %s", packType)
 	}
 }
 
-func setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion string, skipClean bool) error {
+// setupOptions carries the setup flags into the pack-specific setup.
+type setupOptions struct {
+	output             string
+	packSlug           string // CurseForge modpack slug, when known
+	javaPath           string
+	autoJava           bool
+	forceLoader        string
+	forceLoaderVersion string
+	skipClean          bool
+	ram                string // max heap from --ram or config; empty to leave as is
+}
+
+func setupCurseForge(workDir string, opts setupOptions) error {
 	log := logger.Get()
+	output, javaPath := opts.output, opts.javaPath
+	forceLoader, forceLoaderVersion, skipClean := opts.forceLoader, opts.forceLoaderVersion, opts.skipClean
 
 	manifest, err := parser.ParseCurseForge(workDir)
 	if err != nil {
@@ -310,6 +348,9 @@ func setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion 
 	cacheDir := viper.GetString("cache_dir")
 	workers := viper.GetInt("workers")
 	dl := downloader.New(cacheDir, apiKey, workers, !skipClean)
+	if !skipClean {
+		applyExcludeList(dl, manifest, opts.packSlug, cacheDir)
+	}
 
 	// Mods that no download route could fetch are listed once the setup is
 	// over, so the summary is the last thing on screen whether the run
@@ -356,11 +397,22 @@ func setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion 
 		}
 	}
 
-	return installer.Install(output, loaderType, manifest.Minecraft.Version, loaderVersion, javaPath)
+	if opts.autoJava {
+		if javaPath, err = java.Ensure(javaPath, manifest.Minecraft.Version, output); err != nil {
+			return fmt.Errorf("prepare java: %w", err)
+		}
+	}
+
+	if err := installer.Install(output, loaderType, manifest.Minecraft.Version, loaderVersion, javaPath); err != nil {
+		return err
+	}
+	return applyMaxHeap(output, opts.ram)
 }
 
-func setupRaw(workDir, output, javaPath, forceLoader, forceLoaderVersion string, skipClean bool) error {
+func setupRaw(workDir string, opts setupOptions) error {
 	log := logger.Get()
+	output, javaPath := opts.output, opts.javaPath
+	forceLoader, forceLoaderVersion, skipClean := opts.forceLoader, opts.forceLoaderVersion, opts.skipClean
 
 	rp, err := parser.ParseRaw(workDir)
 	if err != nil {
@@ -396,11 +448,35 @@ func setupRaw(workDir, output, javaPath, forceLoader, forceLoaderVersion string,
 	if loaderType == "" {
 		log.Warn().Msg("loader type unknown for raw pack; skipping loader installation")
 	} else {
+		if opts.autoJava {
+			if javaPath, err = java.Ensure(javaPath, mcVersion, output); err != nil {
+				return fmt.Errorf("prepare java: %w", err)
+			}
+		}
 		if err := installer.Install(output, loaderType, mcVersion, loaderVersion, javaPath); err != nil {
 			return fmt.Errorf("install loader: %w", err)
 		}
 	}
 
+	return applyMaxHeap(output, opts.ram)
+}
+
+// applyMaxHeap records --ram in the server's user_jvm_args.txt so the run
+// scripts and a plain `mcpackctl start` use it.
+func applyMaxHeap(serverDir, ram string) error {
+	log := logger.Get()
+	if ram == "" {
+		return nil
+	}
+	written, err := installer.SetMaxHeap(serverDir, ram)
+	if err != nil {
+		return fmt.Errorf("set max heap: %w", err)
+	}
+	if !written {
+		log.Warn().Str("ram", ram).Msg("this loader does not read user_jvm_args.txt; pass --ram to `mcpackctl start` to set the max heap")
+		return nil
+	}
+	log.Info().Str("ram", ram).Msg("max heap set in user_jvm_args.txt")
 	return nil
 }
 
@@ -436,9 +512,19 @@ func runStart(cmd *cobra.Command, args []string) error {
 		javaPath = viper.GetString("java_path")
 	}
 
+	if ram != "" && !installer.ValidHeapSize(ram) {
+		return fmt.Errorf("invalid --ram %q (expected e.g. 4G or 2048M)", ram)
+	}
+
 	resolvedJava, err := resolveJavaPath(javaPath, javaPathExplicit, javaVersion, serverDir)
 	if err != nil {
 		return fmt.Errorf("resolve java path: %w", err)
+	}
+	// Prefer the portable JDK that setup downloaded for this server.
+	if isAutoJava(javaPath, javaPathExplicit, javaVersion) {
+		if local := java.FindLocal(serverDir); local != "" {
+			resolvedJava = local
+		}
 	}
 
 	return runtime.Start(serverDir, ram, resolvedJava)
@@ -496,6 +582,7 @@ func runClean(cmd *cobra.Command, _ []string) error {
 		cacheDir := viper.GetString("cache_dir")
 		workers := viper.GetInt("workers")
 		dl := downloader.New(cacheDir, apiKey, workers, true)
+		applyExcludeList(dl, manifest, "", cacheDir)
 
 		log.Info().Str("dir", modsDir).Msg("cleaning client-only mods using CurseForge API")
 		removed, err := dl.CleanMods(manifest, modsDir)
@@ -547,4 +634,35 @@ func resolveJavaPath(javaPath string, javaPathExplicit bool, javaVersion int, se
 		return "", fmt.Errorf("create server dir: %w", err)
 	}
 	return java.Download(javaVersion, serverDir)
+}
+
+// isAutoJava reports whether the user left java selection to mcpackctl: no
+// --java-path, no --java-version and no custom java_path in the config.
+// In that case a JDK matching the pack's Minecraft version is used, downloaded
+// if the java on PATH is missing or the wrong version.
+func isAutoJava(javaPath string, javaPathExplicit bool, javaVersion int) bool {
+	return !javaPathExplicit && javaVersion <= 0 && javaPath == "java"
+}
+
+// applyExcludeList loads the configured client-only exclude list and applies
+// it to dl. The list only refines client-only detection, so any failure is
+// logged and setup continues without it.
+func applyExcludeList(dl *downloader.Downloader, manifest *parser.Manifest, packSlug, cacheDir string) {
+	log := logger.Get()
+
+	source := viper.GetString("cf_exclude_include_file")
+	if source == "" {
+		return
+	}
+	list, err := downloader.LoadExcludeList(source, cacheDir)
+	if err != nil {
+		log.Warn().Err(err).Str("source", source).Msg("exclude list unavailable, relying on CurseForge Client/Server tags only")
+		return
+	}
+	n, err := dl.ApplyExcludeList(list, manifest, packSlug)
+	if err != nil {
+		log.Warn().Err(err).Msg("cannot apply exclude list, relying on CurseForge Client/Server tags only")
+		return
+	}
+	log.Info().Int("excluded", n).Str("pack", packSlug).Msg("client-only mods matched by exclude list")
 }
