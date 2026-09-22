@@ -65,14 +65,14 @@ func TestReportClientOnlyCrashOnlyReadsNewReports(t *testing.T) {
 	}
 
 	since := time.Now().Add(-time.Minute)
-	if n := reportClientOnlyCrash(dir, since); n != 0 {
+	if n := len(reportClientOnlyCrash(dir, since)); n != 0 {
 		t.Errorf("a crash report from an earlier run was reported (%d mods)", n)
 	}
 
 	if err := os.WriteFile(filepath.Join(reports, "crash-2026-09-23_00.10.00-fml.txt"), []byte(mekalusCrashReport), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if n := reportClientOnlyCrash(dir, since); n != 1 {
+	if n := len(reportClientOnlyCrash(dir, since)); n != 1 {
 		t.Errorf("reported %d mods from the new crash report, want 1", n)
 	}
 }

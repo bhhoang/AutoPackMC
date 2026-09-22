@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/AutoPackMC/pkg/utils"
 )
 
 // fallbackVersion is downloaded when the Minecraft version is unknown and no
@@ -57,7 +58,9 @@ func RequiredVersion(mcVersion string) int {
 
 // InstalledVersion runs `javaPath -version` and returns the Java major version.
 func InstalledVersion(javaPath string) (int, error) {
-	out, err := exec.Command(javaPath, "-version").CombinedOutput() // #nosec G204
+	cmd := exec.Command(javaPath, "-version") // #nosec G204
+	utils.HideWindow(cmd)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return 0, err
 	}

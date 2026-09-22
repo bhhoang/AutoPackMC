@@ -1,0 +1,221 @@
+# Tests every push and pull request. On a push to main it also picks the next
+# version from the commit messages, tags it, builds the mcpackctl CLI and the
+# AutoPack desktop app, and publishes them as a GitHub release.
+#
+# Version bumps follow Conventional Commits since the last v* tag:
+#   feat: ...                    -> minor (v0.1.0 -> v0.2.0)
+#   fix: ..., docs: ..., others  -> patch (v0.1.0 -> v0.1.1)
+#   feat!: ... / BREAKING CHANGE -> major (v0.1.0 -> v1.0.0)
+# Put [skip release] in the head commit message to push to main without
+# releasing.
+name: Build and release
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Releases from main run one at a time so two pushes never pick the same tag.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Vet
+        run: go vet ./...
+      - name: Vet the desktop app
+        if: runner.os == 'Windows'
+        run: go vet -tags desktop,production ./cmd/autopack
+      - name: Test with the race detector
+        if: runner.os == 'Linux'
+        run: go test -race ./...
+      - name: Test
+        if: runner.os == 'Windows'
+        run: go test ./...
+
+  version:
+    name: Pick version
+    needs: test
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip release]')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+      release: ${{ steps.next.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Work out the next version
+        id: next
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A re-run of a commit that is already tagged releases that tag again.
+          existing=$(git tag --points-at HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
+          if [ -n "$existing" ]; then
+            echo "HEAD is already $existing"
+            echo "tag=$existing" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --merged HEAD | sort -V | tail -n1)
+          if [ -z "$last" ]; then
+            base=v0.0.0
+            range=HEAD
+          else
+            base=$last
+            range="$last..HEAD"
+          fi
+          if [ -z "$(git rev-list "$range")" ]; then
+            echo "No commits since $last; nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          subjects=$(git log --format='%s' "$range")
+          bodies=$(git log --format='%b' "$range")
+          IFS=. read -r major minor patch <<< "${base#v}"
+          if grep -qE '^[a-z]+(\([^)]*\))?!:' <<< "$subjects" || grep -q 'BREAKING CHANGE' <<< "$bodies"; then
+            major=$((major + 1)); minor=0; patch=0
+          elif grep -qE '^feat(\([^)]*\))?:' <<< "$subjects"; then
+            minor=$((minor + 1)); patch=0
+          else
+            patch=$((patch + 1))
+          fi
+          tag="v${major}.${minor}.${patch}"
+          echo "Last release: ${last:-none}. Next: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push the tag
+        if: steps.next.outputs.release == 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists"
+          else
+            git tag "$TAG"
+            git push origin "refs/tags/$TAG"
+          fi
+
+  cli:
+    name: CLI (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: windows, goarch: amd64, ext: .exe }
+          - { goos: linux, goarch: amd64, ext: "" }
+          - { goos: linux, goarch: arm64, ext: "" }
+          - { goos: darwin, goarch: amd64, ext: "" }
+          - { goos: darwin, goarch: arm64, ext: "" }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          mkdir -p dist
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/bhhoang/AutoPackMC/internal/cmd.version=$TAG" \
+            -o "dist/mcpackctl-$TAG-$GOOS-$GOARCH${{ matrix.ext }}" ./cmd/mcpackctl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  gui:
+    name: Desktop app (windows/amd64)
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        shell: bash
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          mkdir -p dist
+          go build -trimpath -tags desktop,production \
+            -ldflags "-s -w -H windowsgui -X main.version=$TAG" \
+            -o "dist/AutoPack-$TAG-windows-amd64.exe" ./cmd/autopack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gui-windows-amd64
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [version, cli, gui]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          cat > notes.md <<EOF
+          ## Downloads
+
+          - **AutoPack-$TAG-windows-amd64.exe**: the desktop app for Windows 10 and 11. Download it and double-click it; nothing needs installing. Windows may show "Windows protected your PC" because the app is not signed yet: choose **More info**, then **Run anyway**.
+          - **mcpackctl-$TAG-&lt;os&gt;-&lt;arch&gt;**: the command-line tool for Windows, Linux and macOS.
+          - **SHA256SUMS.txt**: checksums to verify the downloads.
+          EOF
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md --generate-notes --verify-tag
+          fi

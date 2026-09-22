@@ -70,12 +70,12 @@ func FindClientOnlyMods(report string) []ClientOnlyMod {
 }
 
 // reportClientOnlyCrash logs the client-only mods named in crash reports
-// written since the server started, with what to do about them. It returns
-// the number of mods found.
-func reportClientOnlyCrash(serverDir string, since time.Time) int {
+// written since the server started, with what to do about them, and returns
+// them.
+func reportClientOnlyCrash(serverDir string, since time.Time) []ClientOnlyMod {
 	reports, _ := filepath.Glob(filepath.Join(serverDir, "crash-reports", "crash-*.txt"))
 	seen := make(map[string]bool)
-	found := 0
+	var found []ClientOnlyMod
 	for _, r := range reports {
 		if info, err := os.Stat(r); err != nil || info.ModTime().Before(since) {
 			continue
@@ -89,7 +89,7 @@ func reportClientOnlyCrash(serverDir string, since time.Time) int {
 				continue
 			}
 			seen[mod.ModID] = true
-			found++
+			found = append(found, mod)
 			ev := logger.Get().Error().Str("modId", mod.ModID).Str("report", r)
 			if mod.Name != "" {
 				ev = ev.Str("mod", mod.Name)
