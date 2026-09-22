@@ -311,6 +311,11 @@ func setupCurseForge(workDir, output, javaPath, forceLoader, forceLoaderVersion 
 	workers := viper.GetInt("workers")
 	dl := downloader.New(cacheDir, apiKey, workers, !skipClean)
 
+	// Mods that no download route could fetch are listed once the setup is
+	// over, so the summary is the last thing on screen whether the run
+	// succeeded or failed.
+	defer func() { reportFailedMods(dl.FailedMods(), output, modsDir) }()
+
 	// If the pack already ships a mods/ directory (e.g. a pre-downloaded Google Drive
 	// archive), copy it directly and then download any mods that are listed in the
 	// manifest but absent from that folder.  This handles packs where the cloud

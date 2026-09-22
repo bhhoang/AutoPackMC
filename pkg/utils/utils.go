@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -267,27 +268,68 @@ func FindFiles(dir, pattern string) ([]string, error) {
 	return matches, err
 }
 
-// DownloadFile downloads url to dest with the provided headers, retrying up to 3 times
-// with exponential back-off (1s, 2s, 4s).
+// HTTPStatusError reports a non-OK HTTP response for a request.
+type HTTPStatusError struct {
+	StatusCode int
+	URL        string
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("HTTP %d for %s", e.StatusCode, e.URL)
+}
+
+// Retryable reports whether repeating the request could plausibly succeed.
+// Client errors such as 404 are permanent, so retrying them only wastes time.
+func (e *HTTPStatusError) Retryable() bool {
+	switch e.StatusCode {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return true
+	}
+	return e.StatusCode >= 500
+}
+
+// IsRetryable reports whether err is worth another attempt. Transport errors
+// are assumed retryable; HTTP status errors decide for themselves.
+func IsRetryable(err error) bool {
+	var statusErr *HTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.Retryable()
+	}
+	return err != nil
+}
+
+// DownloadFile downloads url to dest with the provided headers, retrying
+// transient failures up to 3 times with exponential back-off (1s, 2s).
+// Permanent failures such as HTTP 404 abort immediately.
 func DownloadFile(url, dest string, headers map[string]string) error {
 	if err := EnsureDir(filepath.Dir(dest)); err != nil {
 		return err
 	}
 
 	var lastErr error
+	attempts := 0
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
 			time.Sleep(time.Duration(1<<(attempt-1)) * time.Second)
 		}
-		lastErr = downloadOnce(url, dest, headers)
+		attempts++
+		lastErr = DownloadFileOnce(url, dest, headers)
 		if lastErr == nil {
 			return nil
 		}
+		if !IsRetryable(lastErr) {
+			break
+		}
 	}
-	return fmt.Errorf("download %q after 3 attempts: %w", url, lastErr)
+	return fmt.Errorf("download %q after %d attempts: %w", url, attempts, lastErr)
 }
 
-func downloadOnce(url, dest string, headers map[string]string) error {
+// DownloadFileOnce performs a single download attempt without retrying.
+func DownloadFileOnce(url, dest string, headers map[string]string) error {
+	if err := EnsureDir(filepath.Dir(dest)); err != nil {
+		return err
+	}
+
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -303,7 +345,7 @@ func downloadOnce(url, dest string, headers map[string]string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+		return &HTTPStatusError{StatusCode: resp.StatusCode, URL: url}
 	}
 
 	out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)

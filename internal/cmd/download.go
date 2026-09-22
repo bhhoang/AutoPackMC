@@ -1,13 +1,11 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"path/filepath"
 	"strconv"
 
+	"github.com/bhhoang/AutoPackMC/internal/downloader"
 	"github.com/bhhoang/AutoPackMC/internal/resolver"
 	"github.com/bhhoang/AutoPackMC/pkg/logger"
 	"github.com/bhhoang/AutoPackMC/pkg/utils"
@@ -95,54 +93,16 @@ func downloadCurseForgeMod(modID, fileID, output, apiKey string) error {
 		return fmt.Errorf("invalid file ID: %w", err)
 	}
 
-	fileInfoURL := fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d", projectID, fileIDInt)
-	resp, err := http.Get(fileInfoURL)
-	if err != nil {
-		return fmt.Errorf("fetch file info: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("CurseForge API returned HTTP %d", resp.StatusCode)
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-	var result struct {
-		Data struct {
-			FileName string `json:"fileName"`
-			DownloadURL string `json:"downloadUrl"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return fmt.Errorf("parse response: %w", err)
-	}
-
-	filename := result.Data.FileName
-	downloadURL := result.Data.DownloadURL
-
-	if filename == "" {
-		filename = fmt.Sprintf("mod-%d-%d.jar", projectID, fileIDInt)
-	}
-	if downloadURL == "" {
-		downloadURL = fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d/download", projectID, fileIDInt)
-	}
-
-	dest := filepath.Join(output, filename)
 	log.Info().
 		Int("projectID", projectID).
 		Int("fileID", fileIDInt).
-		Str("filename", filename).
 		Msg("downloading mod")
 
-	headers := map[string]string{}
-	if apiKey != "" {
-		headers["X-Api-Key"] = apiKey
+	dl := downloader.New(viper.GetString("cache_dir"), apiKey, 1, false)
+	if err := dl.DownloadOne(projectID, fileIDInt, output); err != nil {
+		return err
 	}
 
-	if err := utils.DownloadFile(downloadURL, dest, headers); err != nil {
-		return fmt.Errorf("download: %w", err)
-	}
-
-	log.Info().Str("file", dest).Msg("mod downloaded")
+	log.Info().Str("dir", output).Msg("mod downloaded")
 	return nil
 }

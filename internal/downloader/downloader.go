@@ -2,9 +2,11 @@ package downloader
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +22,23 @@ const (
 	defaultWorkers = 4
 	maxRetries     = 3
 	cacheKeyFormat = "%d-%d.jar" // <projectID>-<fileID>.jar — used for cache entries without a resolved filename
+
+	// cfSiteAPIBase is the unauthenticated API behind the CurseForge website.
+	// It only exposes files that are publicly listed on the project page.
+	cfSiteAPIBase = "https://www.curseforge.com/api/v1"
+	// cfOfficialAPIBase is the official API (requires an API key). It still
+	// serves metadata for files the website no longer lists, which is what
+	// modpack manifests routinely reference.
+	cfOfficialAPIBase = "https://api.curseforge.com/v1"
+	// cfCDNBase is the CDN that actually serves the JAR files.
+	cfCDNBase = "https://mediafilez.forgecdn.net/files"
 )
+
+// ErrFileUnavailable means CurseForge published no metadata for the requested
+// file: the site API answered with a null payload (delisted/removed file) or
+// with 404. Fabricating a download URL in that situation only produces a
+// confusing HTTP 404 later on, so resolution stops here instead.
+var ErrFileUnavailable = errors.New("file not available on CurseForge")
 
 // FileInfo holds metadata about a mod file returned by the CurseForge API.
 type FileInfo struct {
@@ -62,6 +80,15 @@ type Downloader struct {
 
 	fileInfoMu    sync.RWMutex
 	fileInfoCache map[string]*FileInfo
+
+	failedMu     sync.Mutex
+	failed       []FailedMod
+	modInfoCache map[int]modInfo // guarded by failedMu
+
+	// Endpoints, overridable in tests.
+	siteAPIBase     string
+	officialAPIBase string
+	cdnBase         string
 }
 
 // New creates a Downloader with sensible defaults.
@@ -76,6 +103,10 @@ func New(cacheDir, apiKey string, workers int, filterClientOnly bool) *Downloade
 		APIKey:           apiKey,
 		FilterClientOnly: filterClientOnly,
 		fileInfoCache:    make(map[string]*FileInfo),
+		modInfoCache:     make(map[int]modInfo),
+		siteAPIBase:      cfSiteAPIBase,
+		officialAPIBase:  cfOfficialAPIBase,
+		cdnBase:          cfCDNBase,
 	}
 }
 
@@ -107,7 +138,8 @@ func (d *Downloader) DownloadMods(manifest *parser.Manifest, destDir string) err
 			defer wg.Done()
 			for t := range tasks {
 				if err := d.downloadMod(t); err != nil {
-					if t.Required && !isNotFoundErr(err) {
+					d.recordFailure(t.ProjectID, t.FileID, t.ResolvedFilename, err)
+					if t.Required && !isMissingFileErr(err) {
 						errs <- err
 					} else {
 						log.Warn().Err(err).
@@ -161,7 +193,7 @@ func (d *Downloader) downloadMod(t Task) error {
 		// Filename already resolved upstream; build the download URL directly to
 		// avoid a redundant API round-trip.
 		filename = t.ResolvedFilename
-		downloadURL = fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d/download", t.ProjectID, t.FileID)
+		downloadURL = fmt.Sprintf("%s/mods/%d/files/%d/download", d.siteAPIBase, t.ProjectID, t.FileID)
 	} else {
 		fi, err := d.fetchFileInfo(t.ProjectID, t.FileID)
 		if err != nil {
@@ -195,8 +227,31 @@ func (d *Downloader) downloadMod(t Task) error {
 		headers["X-Api-Key"] = d.APIKey
 	}
 
-	if err := downloadWithRetry(downloadURL, cacheFile, headers); err != nil {
-		return fmt.Errorf("download mod %d/%d: %w", t.ProjectID, t.FileID, err)
+	// The website /download endpoint 404s for files it no longer lists, while
+	// the CDN keeps serving them; try it as a fallback whenever the filename is
+	// known.
+	candidates := []string{downloadURL}
+	if fallback := cdnURL(d.cdnBase, t.FileID, filename); fallback != "" && fallback != downloadURL {
+		candidates = append(candidates, fallback)
+	}
+
+	var downloadErr error
+	for i, candidate := range candidates {
+		if i > 0 {
+			log.Debug().
+				Int("projectID", t.ProjectID).
+				Int("fileID", t.FileID).
+				Str("url", candidate).
+				Err(downloadErr).
+				Msg("retrying download from the CurseForge CDN")
+		}
+		downloadErr = downloadWithRetry(candidate, cacheFile, headers)
+		if downloadErr == nil {
+			break
+		}
+	}
+	if downloadErr != nil {
+		return fmt.Errorf("download mod %d/%d: %w", t.ProjectID, t.FileID, downloadErr)
 	}
 
 	destFilename := filename
@@ -206,6 +261,12 @@ func (d *Downloader) downloadMod(t Task) error {
 	destFile := filepath.Join(t.DestDir, destFilename)
 
 	return copyFileSimple(cacheFile, destFile)
+}
+
+// DownloadOne downloads a single mod file into destDir, resolving its filename
+// and download URL from CurseForge.
+func (d *Downloader) DownloadOne(projectID, fileID int, destDir string) error {
+	return d.downloadMod(Task{ProjectID: projectID, FileID: fileID, Required: true, DestDir: destDir})
 }
 
 // fetchFileInfo fetches file metadata (filename, download URL, and game versions)
@@ -225,32 +286,23 @@ func (d *Downloader) fetchFileInfo(projectID, fileID int) (*FileInfo, error) {
 	}
 	d.fileInfoMu.RUnlock()
 
-	fileInfoURL := fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d", projectID, fileID)
-	resp, err := http.Get(fileInfoURL)
+	fi, err := d.fetchFileInfoFromSite(projectID, fileID)
+	if errors.Is(err, ErrFileUnavailable) {
+		// Files pulled from the public project page (deleted, archived or
+		// hidden releases) are still resolvable through the official API.
+		if d.APIKey == "" {
+			return nil, fmt.Errorf("%w: project %d file %d is not published on the website; "+
+				"set a CurseForge API key (--api-key or MCPACKCTL_CURSEFORGE_API_KEY) to resolve it via the official API",
+				ErrFileUnavailable, projectID, fileID)
+		}
+		log.Debug().
+			Int("projectID", projectID).
+			Int("fileID", fileID).
+			Msg("file not listed on the website, falling back to the official CurseForge API")
+		fi, err = d.fetchFileInfoFromOfficialAPI(projectID, fileID)
+	}
 	if err != nil {
 		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("CurseForge API returned HTTP %d for project %d file %d", resp.StatusCode, projectID, fileID)
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-	var result struct {
-		Data struct {
-			FileName     string   `json:"fileName"`
-			GameVersions []string `json:"gameVersions"`
-		} `json:"data"`
-	}
-	if jsonErr := json.Unmarshal(body, &result); jsonErr != nil {
-		return nil, fmt.Errorf("parse CurseForge API response: %w", jsonErr)
-	}
-
-	fi := &FileInfo{
-		FileName:     result.Data.FileName,
-		DownloadURL:  fmt.Sprintf("https://www.curseforge.com/api/v1/mods/%d/files/%d/download", projectID, fileID),
-		GameVersions: result.Data.GameVersions,
 	}
 
 	d.fileInfoMu.Lock()
@@ -261,29 +313,154 @@ func (d *Downloader) fetchFileInfo(projectID, fileID int) (*FileInfo, error) {
 		Int("projectID", projectID).
 		Int("fileID", fileID).
 		Str("filename", fi.FileName).
+		Str("url", fi.DownloadURL).
 		Strs("gameVersions", fi.GameVersions).
-		Msg("got file info from CurseForge API")
+		Msg("resolved file info from CurseForge")
 
 	return fi, nil
 }
 
-func downloadWithRetry(url, dest string, headers map[string]string) error {
+// fetchFileInfoFromSite queries the unauthenticated website API. A missing file
+// is reported there as HTTP 200 with a null data payload, which must be treated
+// as an error rather than as an empty-but-valid file.
+func (d *Downloader) fetchFileInfoFromSite(projectID, fileID int) (*FileInfo, error) {
+	fileInfoURL := fmt.Sprintf("%s/mods/%d/files/%d", d.siteAPIBase, projectID, fileID)
+	resp, err := http.Get(fileInfoURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrFileUnavailable
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("CurseForge API returned HTTP %d for project %d file %d", resp.StatusCode, projectID, fileID)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Data *struct {
+			FileName     string   `json:"fileName"`
+			GameVersions []string `json:"gameVersions"`
+		} `json:"data"`
+	}
+	if jsonErr := json.Unmarshal(body, &result); jsonErr != nil {
+		return nil, fmt.Errorf("parse CurseForge API response: %w", jsonErr)
+	}
+	if result.Data == nil || result.Data.FileName == "" {
+		return nil, ErrFileUnavailable
+	}
+
+	return &FileInfo{
+		FileName: result.Data.FileName,
+		// The website API exposes no download URL; its /download endpoint
+		// redirects to the CDN for every file it lists.
+		DownloadURL:  fmt.Sprintf("%s/mods/%d/files/%d/download", d.siteAPIBase, projectID, fileID),
+		GameVersions: result.Data.GameVersions,
+	}, nil
+}
+
+// fetchFileInfoFromOfficialAPI queries api.curseforge.com using the configured
+// API key. Note that it reports game versions without the website's
+// Client/Server tags, so IsClientOnly reports false for files resolved here and
+// they are downloaded rather than filtered out.
+func (d *Downloader) fetchFileInfoFromOfficialAPI(projectID, fileID int) (*FileInfo, error) {
+	apiURL := fmt.Sprintf("%s/mods/%d/files/%d", d.officialAPIBase, projectID, fileID)
+	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-api-key", d.APIKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: project %d file %d is unknown to the official CurseForge API", ErrFileUnavailable, projectID, fileID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("official CurseForge API returned HTTP %d for project %d file %d", resp.StatusCode, projectID, fileID)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Data *struct {
+			FileName     string   `json:"fileName"`
+			DownloadURL  string   `json:"downloadUrl"`
+			GameVersions []string `json:"gameVersions"`
+		} `json:"data"`
+	}
+	if jsonErr := json.Unmarshal(body, &result); jsonErr != nil {
+		return nil, fmt.Errorf("parse official CurseForge API response: %w", jsonErr)
+	}
+	if result.Data == nil || result.Data.FileName == "" {
+		return nil, fmt.Errorf("%w: project %d file %d returned no metadata", ErrFileUnavailable, projectID, fileID)
+	}
+
+	downloadURL := result.Data.DownloadURL
+	if downloadURL == "" {
+		// Authors can opt out of third-party downloads, which nulls out
+		// downloadUrl; the CDN still serves the file at its canonical path.
+		downloadURL = cdnURL(d.cdnBase, fileID, result.Data.FileName)
+	}
+
+	return &FileInfo{
+		FileName:     result.Data.FileName,
+		DownloadURL:  downloadURL,
+		GameVersions: result.Data.GameVersions,
+	}, nil
+}
+
+// cdnURL builds the canonical forgecdn path for a file: the ID is split into
+// its thousands and remainder parts (5922047 -> 5922/47, no zero padding).
+// It returns an empty string when the filename is unknown.
+func cdnURL(base string, fileID int, fileName string) string {
+	if fileName == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%d/%d/%s", base, fileID/1000, fileID%1000, url.PathEscape(fileName))
+}
+
+// downloadWithRetry retries transient failures with exponential back-off.
+// Permanent failures (404 and friends) return immediately: retrying a missing
+// file nine times only delays the fallback to the CDN.
+func downloadWithRetry(downloadURL, dest string, headers map[string]string) error {
 	var lastErr error
+	attempts := 0
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
 			time.Sleep(time.Duration(1<<(attempt-1)) * time.Second)
 		}
-		lastErr = utils.DownloadFile(url, dest, headers)
+		attempts++
+		lastErr = utils.DownloadFileOnce(downloadURL, dest, headers)
 		if lastErr == nil {
 			return nil
 		}
+		if !utils.IsRetryable(lastErr) {
+			break
+		}
 	}
-	return lastErr
+	return fmt.Errorf("download %q after %d attempts: %w", downloadURL, attempts, lastErr)
 }
 
-func isNotFoundErr(err error) bool {
+// isMissingFileErr reports whether err means the file simply is not available
+// on CurseForge, in which case the pack build continues without it instead of
+// aborting.
+func isMissingFileErr(err error) bool {
 	if err == nil {
 		return false
+	}
+	if errors.Is(err, ErrFileUnavailable) {
+		return true
+	}
+	var statusErr *utils.HTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode == http.StatusNotFound
 	}
 	return strings.Contains(err.Error(), "HTTP 404")
 }
@@ -340,13 +517,16 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 		// packs that ship jar files under their actual names.
 		fi, err := d.fetchFileInfo(f.ProjectID, f.FileID)
 		if err != nil {
-			if f.Required {
+			d.recordFailure(f.ProjectID, f.FileID, "", err)
+			// A file CurseForge no longer publishes cannot be downloaded by
+			// anyone, so skip it rather than failing the whole pack.
+			if f.Required && !isMissingFileErr(err) {
 				return fmt.Errorf("resolve mod %d/%d: %w", f.ProjectID, f.FileID, err)
 			}
 			log.Warn().Err(err).
 				Int("projectID", f.ProjectID).
 				Int("fileID", f.FileID).
-				Msg("cannot resolve optional mod filename, skipping")
+				Msg("cannot resolve mod filename, skipping")
 			continue
 		}
 
@@ -396,7 +576,8 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 			defer wg.Done()
 			for t := range taskCh {
 				if err := d.downloadMod(t); err != nil {
-					if t.Required && !isNotFoundErr(err) {
+					d.recordFailure(t.ProjectID, t.FileID, t.ResolvedFilename, err)
+					if t.Required && !isMissingFileErr(err) {
 						errs <- err
 					} else {
 						log.Warn().Err(err).
