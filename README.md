@@ -10,12 +10,15 @@
 - **Auto-detection** of CurseForge (`manifest.json`) and raw (`/mods` folder) pack formats
 - **Google Drive support** — download directly from `.zip` or `.rar` files on Google Drive
 - **Parallel mod downloads** with a configurable worker pool and exponential-backoff retry
+- **Verified downloads** — mods are checked against the size and SHA-1 CurseForge publishes, JDKs against Adoptium's SHA-256
 - **Local cache** at `~/.cache/mcpackctl/` — identical mods are not re-downloaded
-- **Client-mod cleaner** — automatically removes client-only JARs using the CurseForge API's authoritative `gameVersions` field; falls back to filename patterns for raw packs
-- **Loader installation** — downloads and runs the Forge installer or fetches the Fabric server JAR automatically
-- **Server bootstrap** — writes `eula.txt`, `server.properties`, and `run.sh`
-- **Custom Java support** — set `JAVA` env var or use `--java-path` to use specific Java version
-- **Graceful shutdown** — handles `SIGINT`/`SIGTERM` cleanly when running the server
+- **Client-mod cleaner** — removes client-only JARs using CurseForge's Client/Server tags plus the community [exclude list](#client-only-mods) for mods that are not tagged; falls back to filename patterns for raw packs
+- **Automatic Java** — downloads a portable JDK matching the pack's Minecraft version when the `java` on your PATH is missing or the wrong version
+- **Loader installation** — downloads and runs the Forge/NeoForge installer or fetches the Fabric server JAR automatically
+- **Server bootstrap** — writes `eula.txt` (accepting the [Minecraft EULA](https://aka.ms/MinecraftEULA), which you agree to by running the server), `server.properties`, `user_jvm_args.txt`, `run.sh` and `run.bat`
+- **Pack updates** — re-running `setup` removes jars the new pack version no longer uses, and keeps mods you added yourself
+- **Safe shutdown** — Ctrl+C sends the server's `stop` command so the world is saved
+- **Crash diagnosis** — names the client-only mod when one crashes the server
 
 ---
 
@@ -63,8 +66,11 @@ mcpackctl setup --input ./my-pack-dir --output ./server
 # From Google Drive (supports .zip and .rar)
 mcpackctl setup --input "https://drive.google.com/file/d/13fyE_SdT0k-j-ucYXGERtQUyZ9e89B-b/view?usp=sharing" --output ./server
 
-# Custom RAM and Java path
+# Custom RAM (written to user_jvm_args.txt) and Java path
 mcpackctl setup --input pack.zip --output ./server --ram 8G --java-path /usr/lib/jvm/java-21/bin/java
+
+# Keep a mod off the server, or keep one that is wrongly treated as client-only
+mcpackctl setup --input pack.zip --output ./server --exclude-mods mekalus-oculus-fork-with-fixed-mekanism-mekasuit --include-mods ctm
 
 # Force a specific loader and version, skip client-mod cleaning
 mcpackctl setup --input pack.zip --output ./server --force-loader forge --loader-version 47.4.0 --skip-clean
@@ -99,11 +105,26 @@ mcpackctl start ./server
 mcpackctl start ./server --ram 6G --java-path /usr/bin/java
 ```
 
+You can also use the generated `run.sh` (Linux/macOS) or `run.bat` (Windows) in the server directory.
+
+- **Memory:** the max heap comes from `--ram` when given, otherwise from `-Xmx` in `user_jvm_args.txt`, otherwise 2G. `setup --ram` writes the value into `user_jvm_args.txt`, so the run scripts and a plain `start` use it too. Other JVM flags go in the same file.
+- **Stopping:** press Ctrl+C once to send the server's `stop` command, which saves the world; press it again, or wait 60 seconds, to kill the process.
+- **Crashes:** if a client-only mod crashes the server, `start` names the mod and its jar in `mods/`.
+
+### Updating a pack
+
+Run `setup` again with the new pack version and the same `--output`. Jars installed by the previous setup that the new version no longer uses are removed; mods you added to `mods/` yourself are kept. If the setup fails, `mods/` is put back as it was. The list of installed jars is kept in `.mcpackctl/installed-mods.json`.
+
+Servers set up before this feature existed keep their current jars on the first update; later updates clean up normally.
+
 ### Clean client-only mods
 
 The `clean` command removes client-only mods from an existing server's mods directory. It supports two modes:
 
-**API-based (recommended for CurseForge packs)** — queries the CurseForge API for each mod's `gameVersions` field. A mod is only removed if it is tagged `"Client"` and has *no* `"Server"` tag. This is authoritative and will never accidentally delete a mod that is required on both sides.
+**API-based (recommended for CurseForge packs)** — a mod is removed when either:
+
+- CurseForge tags its file `"Client"` without `"Server"`, or
+- it is on the client-only exclude list (see [Client-only mods](#client-only-mods)).
 
 ```bash
 mcpackctl clean --mods-dir ./server/mods --manifest ./manifest.json
@@ -122,8 +143,17 @@ mcpackctl clean --mods-dir ./server/mods
 | `--mods-dir` | *(required)* Path to the mods directory to clean |
 | `--manifest` | Path to `manifest.json` — enables API-based detection (recommended) |
 | `--api-key` | CurseForge API key (falls back to `MCPACKCTL_CURSEFORGE_API_KEY` / config) |
+| `--exclude-mods` | CurseForge slugs or project IDs to remove as well |
+| `--include-mods` | CurseForge slugs or project IDs to keep even if treated as client-only |
 
 The `setup` command runs the cleaner automatically after downloading mods (disable with `--skip-clean`). For CurseForge packs, `setup` always uses the API path since the manifest is already loaded.
+
+#### Client-only mods
+
+Many client-only mods are not tagged on CurseForge, so tags alone let them through, and they then crash the server (for example `Attempted to load class .../Screen for invalid dist DEDICATED_SERVER`). mcpackctl therefore also uses the [client-only exclude list](https://github.com/itzg/docker-minecraft-server/blob/master/files/cf-exclude-include.json) maintained for itzg/docker-minecraft-server, including its per-modpack exceptions when the pack comes from a CurseForge URL. The list is cached, and the cached copy is used when it cannot be downloaded.
+
+- Point `cf_exclude_include_file` in the config at another URL or local file in the same format, or set it to `""` to disable the list.
+- `--exclude-mods` and `--include-mods` (config: `exclude_mods`, `include_mods`) take CurseForge project slugs or numeric project IDs, separated by commas or spaces. They take precedence over the list, and `--include-mods` also keeps mods that CurseForge wrongly tags client-only.
 
 ### Download individual mods or files
 
@@ -138,17 +168,23 @@ mcpackctl download --url "https://example.com/mod.jar" --output ./mods
 mcpackctl download --mod 306612 --file 5159498 --output ./mods --api-key YOUR_API_KEY
 ```
 
-### Custom Java version
+### Java
 
-The `run.sh` script accepts a `JAVA` environment variable:
+By default mcpackctl picks the Java version the pack's Minecraft version needs:
+
+| Minecraft | Java |
+|-----------|------|
+| 1.16.5 and older | 8 |
+| 1.17 – 1.20.4 | 17 |
+| 1.20.5 – 1.21.x | 21 |
+| 26.x | 25 |
+
+If the `java` on your PATH is exactly that version it is used; otherwise a portable [Eclipse Temurin](https://adoptium.net/) JDK for your OS and CPU is downloaded into the server directory (`jdk-17/` etc.), verified, and reused. `start`, `run.sh` and `run.bat` use it, falling back to `java` on PATH if the folder is missing (for example after copying the server to another OS).
+
+To choose yourself, use `--java-path` (a specific executable) or `--java-version` (download that major version), or set `java_path` in the config. The run scripts also accept a `JAVA` environment variable:
 
 ```bash
-# Use a specific Java version
 JAVA=/usr/lib/jvm/java-21/bin/java ./server/run.sh
-
-# Or export it globally
-export JAVA=/usr/lib/jvm/java-21/bin/java
-./server/run.sh
 ```
 
 ### All `setup` flags
@@ -157,11 +193,14 @@ export JAVA=/usr/lib/jvm/java-21/bin/java
 |------|---------|-------------|
 | `--input` | *(optional)* | Pack ZIP, directory, CurseForge URL, or Google Drive URL. Can also be passed as a positional argument. |
 | `--output` | `./server` | Destination server directory |
-| `--ram` | `2G` | JVM max heap (`-Xmx`) |
-| `--java-path` | `java` | Path to `java` executable |
+| `--ram` | | JVM max heap (`-Xmx`, e.g. `8G`), written to `user_jvm_args.txt` |
+| `--java-path` | | Path to a `java` executable (disables automatic Java) |
+| `--java-version` | | Download this Java major version instead of picking one |
 | `--force-loader` | | Override detected loader (`forge` \| `fabric`) |
 | `--loader-version` | | Override detected loader version (e.g. `47.4.0`) |
 | `--skip-clean` | `false` | Skip client-only mod removal |
+| `--exclude-mods` | | CurseForge slugs or project IDs to leave off the server |
+| `--include-mods` | | CurseForge slugs or project IDs to keep even if treated as client-only |
 | `--log-level` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
 | `--config` | | Path to config file |
 
@@ -174,10 +213,13 @@ mcpackctl reads `~/.config/mcpackctl/config.yaml` at startup. All keys can also 
 ```yaml
 # ~/.config/mcpackctl/config.yaml
 curseforge_api_key: "your-key-here"
-java_path: /usr/lib/jvm/java-21/bin/java
+java_path: /usr/lib/jvm/java-21/bin/java   # omit to pick Java automatically
 ram: 6G
 cache_dir: ~/.cache/mcpackctl
 workers: 8
+cf_exclude_include_file: https://raw.githubusercontent.com/itzg/docker-minecraft-server/master/files/cf-exclude-include.json
+exclude_mods: [some-client-mod]
+include_mods: []
 ```
 
 ### CurseForge API Key
@@ -217,11 +259,13 @@ internal/
   cmd/               Cobra command definitions
   detector/          Detect pack type and Google Drive URLs
   parser/            Parse manifest.json or raw folder
-  downloader/        Parallel mod downloader with cache & retry
-  installer/         Forge/Fabric server installer + scripts
+  downloader/        Parallel mod downloader with cache, checksums & exclude list
+  installer/         Forge/Fabric server installer + run scripts
+  java/              Pick and download a portable JDK
+  modstate/          Track installed jars across pack updates
   cleaner/           Remove client-only mods
   resolver/          Resolve CurseForge URLs to download URLs (official API)
-  runtime/           Start and supervise the server process
+  runtime/           Start, stop and diagnose the server process
 pkg/
   logger/            zerolog wrapper with pretty console output
   utils/             Shared utilities (zip, rar, HTTP download)

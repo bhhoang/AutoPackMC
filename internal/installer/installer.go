@@ -2,6 +2,7 @@ package installer
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,7 @@ const (
 	fabricInstallerVersionURL = "https://meta.fabricmc.net/v2/versions/installer"
 
 	defaultEULA             = "eula=true\n"
+	minecraftEULAURL        = "https://aka.ms/MinecraftEULA"
 	defaultServerProperties = `#Minecraft server properties
 server-port=25565
 online-mode=true
@@ -78,7 +80,10 @@ func Install(serverDir, loaderType, mcVersion, loaderVersion, javaPath string) e
 	if err := writeServerProperties(serverDir); err != nil {
 		return err
 	}
-	return WriteRunScript(serverDir, strings.ToLower(loaderType), mcVersion, loaderVersion)
+	if err := WriteRunScripts(serverDir); err != nil {
+		return err
+	}
+	return UsePortableJava(serverDir, javaPath)
 }
 
 func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
@@ -115,6 +120,10 @@ func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
+			// Retrying cannot help when java itself failed to start.
+			if startErr := javaStartError(javaPath, err); startErr != nil {
+				return fmt.Errorf("run Forge installer: %w", startErr)
+			}
 			lastErr = err
 			if attempt < maxForgeInstallAttempts {
 				log.Warn().Err(err).Int("attempt", attempt).Int("maxAttempts", maxForgeInstallAttempts).Msg("Forge installer failed, retrying")
@@ -135,6 +144,17 @@ func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
 
 	log.Info().Msg("Forge server installed")
 	return nil
+}
+
+// javaStartError returns a descriptive error when err means java could not be
+// started at all (missing or not executable), as opposed to the installer
+// running and exiting with an error. It returns nil for the latter.
+func javaStartError(javaPath string, err error) error {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return nil
+	}
+	return fmt.Errorf("cannot start java %q: %w (install Java, or use --java-path or --java-version)", javaPath, err)
 }
 
 func fetchLatestFabricInstallerVersion() (string, error) {
@@ -189,6 +209,9 @@ func installNeoForge(serverDir, mcVersion, neoForgeVersion, javaPath string) err
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		if startErr := javaStartError(javaPath, err); startErr != nil {
+			return fmt.Errorf("run NeoForge installer: %w", startErr)
+		}
 		return fmt.Errorf("NeoForge installer failed: %w", err)
 	}
 
@@ -231,7 +254,13 @@ func writeEULA(serverDir string) error {
 	if utils.FileExists(eulaPath) {
 		return nil
 	}
-	return os.WriteFile(eulaPath, []byte(defaultEULA), 0o644)
+	if err := os.WriteFile(eulaPath, []byte(defaultEULA), 0o644); err != nil {
+		return err
+	}
+	logger.Get().Info().
+		Str("file", eulaPath).
+		Msg("accepted the Minecraft EULA in eula.txt; by running this server you agree to it: " + minecraftEULAURL)
+	return nil
 }
 
 func writeServerProperties(serverDir string) error {
@@ -240,38 +269,4 @@ func writeServerProperties(serverDir string) error {
 		return nil
 	}
 	return os.WriteFile(propsPath, []byte(defaultServerProperties), 0o644)
-}
-
-func WriteRunScript(serverDir, loaderType, mcVersion, loaderVersion string) error {
-	runShPath := filepath.Join(serverDir, "run.sh")
-	if utils.FileExists(runShPath) {
-		return nil
-	}
-
-	argsPath := "libraries/net/minecraftforge/forge/" + mcVersion + "-" + loaderVersion + "/unix_args.txt"
-	if loaderType == "neoforge" {
-		argsPath = "libraries/net/neoforged/neoforge/" + loaderVersion + "/unix_args.txt"
-	}
-
-	content := "#!/usr/bin/env sh\n" +
-		"# Minecraft server startup script\n" +
-		"set -eu\n" +
-		"DIR=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\"\n" +
-		"if [ -z \"${JAVA:-}\" ]; then\n" +
-		"  JAVA=java\n" +
-		"  for CANDIDATE in \"$DIR\"/jdk-*/bin/java; do\n" +
-		"    if [ -x \"$CANDIDATE\" ]; then JAVA=\"$CANDIDATE\"; break; fi\n" +
-		"  done\n" +
-		"fi\n" +
-		"cd \"$DIR\"\n" +
-		"ARGS=\"" + argsPath + "\"\n" +
-		"if [ -f \"$ARGS\" ]; then\n" +
-		"  [ -f user_jvm_args.txt ] || : > user_jvm_args.txt\n" +
-		"  exec \"$JAVA\" @user_jvm_args.txt @\"$ARGS\" \"$@\"\n" +
-		"fi\n" +
-		"LEGACY=\"minecraftforge-universal-" + mcVersion + "-" + loaderVersion + "-v" + strings.ReplaceAll(mcVersion, ".", "") + "-pregradle.jar\"\n" +
-		"if [ -f \"$LEGACY\" ]; then exec \"$JAVA\" -jar \"$LEGACY\" nogui \"$@\"; fi\n" +
-		"echo \"No startup target found for " + loaderType + ".\" >&2\n" +
-		"exit 1\n"
-	return os.WriteFile(runShPath, []byte(content), 0o755)
 }
