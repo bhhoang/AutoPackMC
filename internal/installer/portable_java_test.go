@@ -64,7 +64,8 @@ func TestUsePortableJavaPatchesForgeScripts(t *testing.T) {
 	sh := readFile(t, filepath.Join(dir, "run.sh"))
 	for _, want := range []string{
 		"#!/usr/bin/env sh\n# " + portableJavaMarker,
-		`if [ -x "$(dirname "$0")/jdk-17/bin/java" ]; then JAVA="$(dirname "$0")/jdk-17/bin/java"; fi`,
+		`DIR="$(cd "$(dirname "$0")" && pwd)"`,
+		`if [ -z "${JAVA:-}" ]; then JAVA=java; if [ -x "$DIR/jdk-17/bin/java" ]; then JAVA="$DIR/jdk-17/bin/java"; fi; fi`,
 		"\n\"$JAVA\" @user_jvm_args.txt @libraries/net/minecraftforge/forge/1.20.1-47.4.0/unix_args.txt \"$@\"\n",
 	} {
 		if !strings.Contains(sh, want) {

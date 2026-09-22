@@ -79,7 +79,7 @@ func Install(serverDir, loaderType, mcVersion, loaderVersion, javaPath string) e
 	if err := writeServerProperties(serverDir); err != nil {
 		return err
 	}
-	if err := WriteRunScript(serverDir, strings.ToLower(loaderType), mcVersion, loaderVersion); err != nil {
+	if err := WriteRunScripts(serverDir); err != nil {
 		return err
 	}
 	return UsePortableJava(serverDir, javaPath)
@@ -262,38 +262,4 @@ func writeServerProperties(serverDir string) error {
 		return nil
 	}
 	return os.WriteFile(propsPath, []byte(defaultServerProperties), 0o644)
-}
-
-func WriteRunScript(serverDir, loaderType, mcVersion, loaderVersion string) error {
-	runShPath := filepath.Join(serverDir, "run.sh")
-	if utils.FileExists(runShPath) {
-		return nil
-	}
-
-	argsPath := "libraries/net/minecraftforge/forge/" + mcVersion + "-" + loaderVersion + "/unix_args.txt"
-	if loaderType == "neoforge" {
-		argsPath = "libraries/net/neoforged/neoforge/" + loaderVersion + "/unix_args.txt"
-	}
-
-	content := "#!/usr/bin/env sh\n" +
-		"# Minecraft server startup script\n" +
-		"set -eu\n" +
-		"DIR=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\"\n" +
-		"if [ -z \"${JAVA:-}\" ]; then\n" +
-		"  JAVA=java\n" +
-		"  for CANDIDATE in \"$DIR\"/jdk-*/bin/java; do\n" +
-		"    if [ -x \"$CANDIDATE\" ]; then JAVA=\"$CANDIDATE\"; break; fi\n" +
-		"  done\n" +
-		"fi\n" +
-		"cd \"$DIR\"\n" +
-		"ARGS=\"" + argsPath + "\"\n" +
-		"if [ -f \"$ARGS\" ]; then\n" +
-		"  [ -f user_jvm_args.txt ] || : > user_jvm_args.txt\n" +
-		"  exec \"$JAVA\" @user_jvm_args.txt @\"$ARGS\" \"$@\"\n" +
-		"fi\n" +
-		"LEGACY=\"minecraftforge-universal-" + mcVersion + "-" + loaderVersion + "-v" + strings.ReplaceAll(mcVersion, ".", "") + "-pregradle.jar\"\n" +
-		"if [ -f \"$LEGACY\" ]; then exec \"$JAVA\" -jar \"$LEGACY\" nogui \"$@\"; fi\n" +
-		"echo \"No startup target found for " + loaderType + ".\" >&2\n" +
-		"exit 1\n"
-	return os.WriteFile(runShPath, []byte(content), 0o755)
 }

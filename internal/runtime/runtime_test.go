@@ -137,3 +137,29 @@ func TestBuildLaunchArgsDefaultMaxHeap(t *testing.T) {
 		t.Errorf("args = %q, want the default -Xmx%s", args, defaultRAM)
 	}
 }
+
+// Jar-based servers expand user_jvm_args.txt instead of passing it as an
+// @-file, which Java 8 (needed by old Forge) does not support.
+func TestBuildLaunchArgsJarExpandsUserArgs(t *testing.T) {
+	dir := t.TempDir()
+	touch(t, dir, "fabric-server-launch.jar")
+	userArgs := "# comment -Xmx1G\n-Xmx6G -XX:+UseG1GC\n"
+	if err := os.WriteFile(filepath.Join(dir, "user_jvm_args.txt"), []byte(userArgs), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, args, err := buildLaunchArgs(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"-Xms512M", "-Xmx6G", "-XX:+UseG1GC", "-jar", "fabric-server-launch.jar", "nogui"}
+	if !slices.Equal(args, want) {
+		t.Errorf("args = %q, want %q", args, want)
+	}
+
+	// An explicit ram still wins by coming last.
+	_, args, _ = buildLaunchArgs(dir, "3G")
+	if args[len(args)-4] != "-Xmx3G" {
+		t.Errorf("args = %q, want -Xmx3G after the file's arguments", args)
+	}
+}

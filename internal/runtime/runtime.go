@@ -140,34 +140,59 @@ func buildLaunchArgs(serverDir, ram string) (string, []string, error) {
 		return argsFile, args, nil
 	}
 
-	// Fabric
-	fabricJAR := filepath.Join(serverDir, "fabric-server-launch.jar")
-	if utils.FileExists(fabricJAR) {
-		args := jvmArgs(ram, "fabric-server-launch.jar")
-		return fabricJAR, args, nil
+	jar, err := ServerJar(serverDir)
+	if err != nil {
+		return "", nil, err
+	}
+	// Java 8, which older servers need, does not support @-files, so the
+	// arguments in user_jvm_args.txt are expanded here instead.
+	args := []string{"-Xms512M"}
+	userArgs := readJVMArgs(filepath.Join(serverDir, "user_jvm_args.txt"))
+	args = append(args, userArgs...)
+	switch {
+	case ram != "":
+		args = append(args, "-Xmx"+ram)
+	case hasMaxHeap(userArgs):
+		logger.Get().Info().Msg("using max heap (-Xmx) from user_jvm_args.txt")
+	default:
+		args = append(args, "-Xmx"+defaultRAM)
+	}
+	args = append(args, "-jar", jar, "nogui")
+	return filepath.Join(serverDir, jar), args, nil
+}
+
+// UsesArgsFiles reports whether serverDir was installed by a Forge 1.17+ or
+// NeoForge installer, which launches through @-files and writes its own
+// run.bat and run.sh.
+func UsesArgsFiles(serverDir string) bool {
+	return findLoaderArgsFile(serverDir) != ""
+}
+
+// ServerJar returns the jar, relative to serverDir, that starts a server
+// launched with "java -jar": Fabric's launcher, a pre-1.17 Forge jar, or a
+// plain server.jar.
+func ServerJar(serverDir string) (string, error) {
+	if utils.FileExists(filepath.Join(serverDir, "fabric-server-launch.jar")) {
+		return "fabric-server-launch.jar", nil
 	}
 
 	// Forge legacy (<1.17) — forge-*.jar in the server root (not the installer).
 	// Only the root is searched: mods/ and libraries/ hold unrelated forge-*.jar files.
 	forgeJARs, err := filepath.Glob(filepath.Join(serverDir, "forge-*.jar"))
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	for _, jar := range forgeJARs {
-		base := strings.ToLower(filepath.Base(jar))
-		if strings.Contains(base, "installer") {
-			continue
+		base := filepath.Base(jar)
+		if !strings.Contains(strings.ToLower(base), "installer") {
+			return base, nil
 		}
-		return jar, jvmArgs(ram, filepath.Base(jar)), nil
 	}
 
-	// Generic fallback: any server.jar
-	serverJAR := filepath.Join(serverDir, "server.jar")
-	if utils.FileExists(serverJAR) {
-		return serverJAR, jvmArgs(ram, "server.jar"), nil
+	if utils.FileExists(filepath.Join(serverDir, "server.jar")) {
+		return "server.jar", nil
 	}
-
-	return "", nil, fmt.Errorf("no server JAR found in %q", serverDir)
+	return "", fmt.Errorf("no server JAR found in %q", serverDir)
 }
 
 // loaderArgsDirs are where Forge and NeoForge installers put their launch
@@ -213,34 +238,34 @@ func modTime(path string) time.Time {
 	return fi.ModTime()
 }
 
-// setsMaxHeap reports whether a JVM @-file sets -Xmx outside a comment.
-func setsMaxHeap(path string) bool {
+// readJVMArgs returns the arguments in a JVM @-file such as
+// user_jvm_args.txt: whitespace-separated, with # starting a comment line.
+// A missing file yields no arguments.
+func readJVMArgs(path string) []string {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false
+		return nil
 	}
+	var args []string
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "#") {
 			continue
 		}
-		for _, field := range strings.Fields(line) {
-			if strings.HasPrefix(field, "-Xmx") {
-				return true
-			}
+		args = append(args, strings.Fields(line)...)
+	}
+	return args
+}
+
+// setsMaxHeap reports whether a JVM @-file sets -Xmx outside a comment.
+func setsMaxHeap(path string) bool {
+	return hasMaxHeap(readJVMArgs(path))
+}
+
+func hasMaxHeap(args []string) bool {
+	for _, a := range args {
+		if strings.HasPrefix(a, "-Xmx") {
+			return true
 		}
 	}
 	return false
-}
-
-func jvmArgs(ram, jarName string) []string {
-	if ram == "" {
-		ram = defaultRAM
-	}
-	return []string{
-		"-Xms512M",
-		fmt.Sprintf("-Xmx%s", ram),
-		"-jar",
-		jarName,
-		"nogui",
-	}
 }

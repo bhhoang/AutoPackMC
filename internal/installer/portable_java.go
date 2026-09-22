@@ -26,20 +26,24 @@ func UsePortableJava(serverDir, javaPath string) error {
 	// javaPath is <jdk home>/bin/java[.exe].
 	jdkHome := filepath.ToSlash(filepath.Dir(filepath.Dir(rel)))
 
+	// Both blocks honour a JAVA variable set by the user. The block length must
+	// stay the same so that blocks from earlier runs are replaced cleanly.
 	batJava := filepath.FromSlash("%~dp0" + jdkHome + "/bin/java.exe")
 	bat := []string{
-		"REM " + portableJavaMarker + " (falls back to java on PATH)",
-		`set "JAVA=java"`,
-		fmt.Sprintf(`if exist "%s" set "JAVA=%s"`, batJava, batJava),
+		"REM " + portableJavaMarker + " (set JAVA to override; falls back to java on PATH)",
+		fmt.Sprintf(`if not defined JAVA if exist "%s" set "JAVA=%s"`, batJava, batJava),
+		`if not defined JAVA set "JAVA=java"`,
 	}
 	if err := patchRunScript(filepath.Join(serverDir, "run.bat"), bat, `"%JAVA%"`, 1); err != nil {
 		return err
 	}
 
+	// DIR is absolute, so the path stays valid when the script changes
+	// directory or is started from elsewhere (e.g. ./server/run.sh).
 	sh := []string{
-		"# " + portableJavaMarker + " (falls back to java on PATH)",
-		"JAVA=java",
-		fmt.Sprintf(`if [ -x "$(dirname "$0")/%s/bin/java" ]; then JAVA="$(dirname "$0")/%s/bin/java"; fi`, jdkHome, jdkHome),
+		"# " + portableJavaMarker + " (set JAVA to override; falls back to java on PATH)",
+		`DIR="$(cd "$(dirname "$0")" && pwd)"`,
+		fmt.Sprintf(`if [ -z "${JAVA:-}" ]; then JAVA=java; if [ -x "$DIR/%s/bin/java" ]; then JAVA="$DIR/%s/bin/java"; fi; fi`, jdkHome, jdkHome),
 	}
 	return patchRunScript(filepath.Join(serverDir, "run.sh"), sh, `"$JAVA"`, 1)
 }
