@@ -1,0 +1,3 @@
+# Local builds (releases are built by CI)
+/AutoPack*.exe
+/dist/

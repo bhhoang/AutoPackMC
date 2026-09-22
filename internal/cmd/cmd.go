@@ -22,10 +22,15 @@ import (
 
 var cfgFile string
 
+// version is set at build time with
+// -ldflags "-X github.com/bhhoang/AutoPackMC/internal/cmd.version=v1.2.3".
+var version = "dev"
+
 // rootCmd is the base command for mcpackctl.
 var rootCmd = &cobra.Command{
-	Use:   "mcpackctl",
-	Short: "AutoPackMC — automated Minecraft modpack server setup",
+	Use:     "mcpackctl",
+	Version: version,
+	Short:   "AutoPackMC — automated Minecraft modpack server setup",
 	Long: `mcpackctl downloads, configures, and runs Minecraft modpack servers.
 It supports CurseForge and raw modpack formats with Forge and Fabric loaders.`,
 }

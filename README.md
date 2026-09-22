@@ -47,6 +47,14 @@ The page is plain HTML, CSS and JavaScript in `cmd/autopack/frontend/`, embedded
 
 ## Installation
 
+**Download:** the [Releases page](https://github.com/bhhoang/AutoPackMC/releases/latest) has the desktop app for Windows (`AutoPack-<version>-windows-amd64.exe`) and `mcpackctl` for Windows, Linux and macOS, with `SHA256SUMS.txt` to check them. `mcpackctl --version` prints the version you have.
+
+### Releases
+
+Every push to `main` that passes the tests is released automatically by `.github/workflows/release.yml`. The version comes from the commit messages since the last tag ([Conventional Commits](https://www.conventionalcommits.org)): a `feat:` commit bumps the minor version, `feat!:` or a `BREAKING CHANGE:` footer bumps the major version, and anything else bumps the patch. Add `[skip release]` to a commit message to push to `main` without releasing. Other branches and pull requests are only tested.
+
+### Build from source
+
 **Requirements:** Go ≥ 1.25
 
 ```bash
