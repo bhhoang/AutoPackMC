@@ -116,6 +116,7 @@ func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
 	const maxForgeInstallAttempts = 3
 	for attempt := 1; attempt <= maxForgeInstallAttempts; attempt++ {
 		cmd := exec.Command(javaPath, "-jar", installerJAR, "--installServer") // #nosec G204
+		utils.HideWindow(cmd)
 		cmd.Dir = serverDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -205,6 +206,7 @@ func installNeoForge(serverDir, mcVersion, neoForgeVersion, javaPath string) err
 
 	log.Info().Msg("running NeoForge installer (--installServer)")
 	cmd := exec.Command(javaPath, "-jar", installerJAR, "--installServer") // #nosec G204
+	utils.HideWindow(cmd)
 	cmd.Dir = serverDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
