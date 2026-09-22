@@ -108,8 +108,9 @@ type cfDownloadURLResponse struct {
 
 // Resolver resolves CurseForge modpack URLs to download URLs.
 type Resolver struct {
-	APIKey string
-	client *http.Client
+	APIKey  string
+	client  *http.Client
+	apiBase string // overrides cfAPIBase in tests
 }
 
 // New creates a Resolver using the given CurseForge API key.
