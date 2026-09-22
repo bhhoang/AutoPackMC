@@ -2,6 +2,7 @@ package installer
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -118,6 +119,10 @@ func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
+			// Retrying cannot help when java itself failed to start.
+			if startErr := javaStartError(javaPath, err); startErr != nil {
+				return fmt.Errorf("run Forge installer: %w", startErr)
+			}
 			lastErr = err
 			if attempt < maxForgeInstallAttempts {
 				log.Warn().Err(err).Int("attempt", attempt).Int("maxAttempts", maxForgeInstallAttempts).Msg("Forge installer failed, retrying")
@@ -138,6 +143,17 @@ func installForge(serverDir, mcVersion, forgeVersion, javaPath string) error {
 
 	log.Info().Msg("Forge server installed")
 	return nil
+}
+
+// javaStartError returns a descriptive error when err means java could not be
+// started at all (missing or not executable), as opposed to the installer
+// running and exiting with an error. It returns nil for the latter.
+func javaStartError(javaPath string, err error) error {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return nil
+	}
+	return fmt.Errorf("cannot start java %q: %w (install Java, or use --java-path or --java-version)", javaPath, err)
 }
 
 func fetchLatestFabricInstallerVersion() (string, error) {
@@ -192,6 +208,9 @@ func installNeoForge(serverDir, mcVersion, neoForgeVersion, javaPath string) err
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		if startErr := javaStartError(javaPath, err); startErr != nil {
+			return fmt.Errorf("run NeoForge installer: %w", startErr)
+		}
 		return fmt.Errorf("NeoForge installer failed: %w", err)
 	}
 
