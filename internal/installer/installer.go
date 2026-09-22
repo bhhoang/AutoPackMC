@@ -22,6 +22,7 @@ const (
 	fabricInstallerVersionURL = "https://meta.fabricmc.net/v2/versions/installer"
 
 	defaultEULA             = "eula=true\n"
+	minecraftEULAURL        = "https://aka.ms/MinecraftEULA"
 	defaultServerProperties = `#Minecraft server properties
 server-port=25565
 online-mode=true
@@ -253,7 +254,13 @@ func writeEULA(serverDir string) error {
 	if utils.FileExists(eulaPath) {
 		return nil
 	}
-	return os.WriteFile(eulaPath, []byte(defaultEULA), 0o644)
+	if err := os.WriteFile(eulaPath, []byte(defaultEULA), 0o644); err != nil {
+		return err
+	}
+	logger.Get().Info().
+		Str("file", eulaPath).
+		Msg("accepted the Minecraft EULA in eula.txt; by running this server you agree to it: " + minecraftEULAURL)
+	return nil
 }
 
 func writeServerProperties(serverDir string) error {

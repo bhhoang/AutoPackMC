@@ -15,7 +15,7 @@
 - **Client-mod cleaner** — removes client-only JARs using CurseForge's Client/Server tags plus the community [exclude list](#client-only-mods) for mods that are not tagged; falls back to filename patterns for raw packs
 - **Automatic Java** — downloads a portable JDK matching the pack's Minecraft version when the `java` on your PATH is missing or the wrong version
 - **Loader installation** — downloads and runs the Forge/NeoForge installer or fetches the Fabric server JAR automatically
-- **Server bootstrap** — writes `eula.txt`, `server.properties`, `user_jvm_args.txt`, `run.sh` and `run.bat`
+- **Server bootstrap** — writes `eula.txt` (accepting the [Minecraft EULA](https://aka.ms/MinecraftEULA), which you agree to by running the server), `server.properties`, `user_jvm_args.txt`, `run.sh` and `run.bat`
 - **Pack updates** — re-running `setup` removes jars the new pack version no longer uses, and keeps mods you added yourself
 - **Safe shutdown** — Ctrl+C sends the server's `stop` command so the world is saved
 - **Crash diagnosis** — names the client-only mod when one crashes the server
