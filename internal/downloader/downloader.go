@@ -80,6 +80,11 @@ type Downloader struct {
 	APIKey           string
 	FilterClientOnly bool // when true, mods tagged Client-only (no Server tag) are skipped
 
+	// OnModDone, when set, is called with the number of finished and total
+	// mod downloads: once with 0 before they start, then after each one. It
+	// may be called from several goroutines at once.
+	OnModDone func(done, total int)
+
 	fileInfoMu    sync.RWMutex
 	fileInfoCache map[string]*FileInfo
 
@@ -92,6 +97,9 @@ type Downloader struct {
 	excludedMu       sync.RWMutex
 	excludedProjects map[int]string
 	forcedProjects   map[int]bool // kept even when tagged client-only
+
+	leftOffMu sync.Mutex
+	leftOff   map[int]*LeftOffMod // by project ID
 
 	// SHA-1 of manifest files by file ID, from prefetchHashes.
 	hashMu     sync.RWMutex
@@ -144,13 +152,16 @@ func (d *Downloader) DownloadMods(manifest *parser.Manifest, destDir string) err
 
 	var wg sync.WaitGroup
 	errs := make(chan error, len(manifest.Files))
+	prog := d.newProgress(len(manifest.Files))
 
 	for i := 0; i < d.Workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for t := range tasks {
-				if err := d.downloadMod(t); err != nil {
+				err := d.downloadMod(t)
+				prog.step()
+				if err != nil {
 					d.recordFailure(t.ProjectID, t.FileID, t.ResolvedFilename, err)
 					if t.Required && !isMissingFileErr(err) {
 						errs <- err
@@ -198,6 +209,7 @@ func (d *Downloader) downloadMod(t Task) error {
 	} else {
 		if slug, ok := d.excludedSlug(t.ProjectID); ok && d.FilterClientOnly {
 			logExcludedSkip(t.ProjectID, t.FileID, slug)
+			d.noteLeftOff(LeftOffMod{ProjectID: t.ProjectID, FileID: t.FileID, Slug: slug, ByList: true})
 			return nil
 		}
 		fi, err := d.fetchFileInfo(t.ProjectID, t.FileID)
@@ -206,6 +218,7 @@ func (d *Downloader) downloadMod(t Task) error {
 		}
 		if d.FilterClientOnly && fi.IsClientOnly() && !d.forceIncluded(t.ProjectID) {
 			logClientOnlySkip(t.ProjectID, t.FileID, fi)
+			d.noteLeftOff(LeftOffMod{ProjectID: t.ProjectID, FileID: t.FileID, FileName: fi.FileName})
 			return nil
 		}
 		downloadURL = fi.DownloadURL
@@ -531,6 +544,7 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 	for _, f := range manifest.Files {
 		if slug, ok := d.excludedSlug(f.ProjectID); ok && d.FilterClientOnly {
 			logExcludedSkip(f.ProjectID, f.FileID, slug)
+			d.noteLeftOff(LeftOffMod{ProjectID: f.ProjectID, FileID: f.FileID, Slug: slug, ByList: true})
 			continue
 		}
 
@@ -563,6 +577,7 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 
 		if d.FilterClientOnly && fi.IsClientOnly() && !d.forceIncluded(f.ProjectID) {
 			logClientOnlySkip(f.ProjectID, f.FileID, fi)
+			d.noteLeftOff(LeftOffMod{ProjectID: f.ProjectID, FileID: f.FileID, FileName: fi.FileName})
 			continue
 		}
 
@@ -600,13 +615,16 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 
 	var wg sync.WaitGroup
 	errs := make(chan error, len(tasks))
+	prog := d.newProgress(len(tasks))
 
 	for i := 0; i < d.Workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for t := range taskCh {
-				if err := d.downloadMod(t); err != nil {
+				err := d.downloadMod(t)
+				prog.step()
+				if err != nil {
 					d.recordFailure(t.ProjectID, t.FileID, t.ResolvedFilename, err)
 					if t.Required && !isMissingFileErr(err) {
 						errs <- err
@@ -680,6 +698,7 @@ func (d *Downloader) CleanMods(manifest *parser.Manifest, modsDir string) ([]str
 			Str("excludeListSlug", excludedSlug).
 			Msg("removed client-only mod")
 		removed = append(removed, fi.FileName)
+		d.noteLeftOff(LeftOffMod{ProjectID: f.ProjectID, FileID: f.FileID, Slug: excludedSlug, FileName: fi.FileName, ByList: excluded})
 	}
 	return removed, nil
 }
