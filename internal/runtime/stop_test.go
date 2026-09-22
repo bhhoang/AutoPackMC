@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,12 +18,20 @@ func TestHelperServer(t *testing.T) {
 	if os.Getenv("MCPACKCTL_HELPER_SERVER") == "" {
 		t.Skip("helper process")
 	}
+	if os.Getenv("MCPACKCTL_HELPER_CRASH") != "" {
+		// Crash like Forge does on a client-only mod: write a report, exit 0.
+		_ = os.MkdirAll("crash-reports", 0o755)
+		_ = os.WriteFile(filepath.Join("crash-reports", "crash-helper-server.txt"), []byte(mekalusCrashReport), 0o644)
+		os.Exit(0)
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		if strings.TrimSpace(scanner.Text()) == "stop" && os.Getenv("MCPACKCTL_HELPER_IGNORE_STOP") == "" {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "stop" && os.Getenv("MCPACKCTL_HELPER_IGNORE_STOP") == "" {
 			fmt.Println("Stopping the server")
 			os.Exit(0)
 		}
+		fmt.Println("> " + line)
 	}
 	// Keep running after stdin closes, like a server that hangs.
 	time.Sleep(time.Minute)

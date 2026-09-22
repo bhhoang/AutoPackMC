@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
@@ -21,67 +20,36 @@ import (
 // user_jvm_args.txt sets one.
 const defaultRAM = "2G"
 
-// Start launches the Minecraft server located in serverDir.
-// ram is a JVM heap size string such as "4G" or "2048M"; empty means not
-// specified, so a -Xmx in user_jvm_args.txt or defaultRAM applies.
-// javaPath may be "java" to use PATH.
+// Start launches the Minecraft server located in serverDir and runs it in
+// the terminal: what the user types goes to the server console, and Ctrl+C
+// stops it cleanly. ram is a JVM heap size string such as "4G" or "2048M";
+// empty means not specified, so a -Xmx in user_jvm_args.txt or defaultRAM
+// applies. javaPath may be "java" to use PATH.
 func Start(serverDir, ram, javaPath string) error {
 	log := logger.Get()
-
-	if javaPath == "" {
-		javaPath = "java"
-	}
-
-	serverJAR, args, err := buildLaunchArgs(serverDir, ram)
-	if err != nil {
-		return err
-	}
-
-	log.Info().
-		Str("serverDir", serverDir).
-		Str("jar", serverJAR).
-		Strs("args", args).
-		Msg("starting Minecraft server")
-
-	cmd := exec.Command(javaPath, args...) // #nosec G204
-	cmd.Dir = serverDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	// The server console is fed through a pipe so that, besides forwarding
-	// what the user types, "stop" can be sent on shutdown.
-	console, err := cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("open server console: %w", err)
-	}
 
 	// Watch for signals before starting so an early Ctrl+C is not missed.
 	sigCh := make(chan os.Signal, 2)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 
-	// Crash reports written after this are from this run (with slack for
-	// coarse file timestamps).
-	started := time.Now().Add(-2 * time.Second)
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start server process: %w", err)
+	srv, err := Launch(serverDir, ram, javaPath, os.Stdout, os.Stderr)
+	if err != nil {
+		return err
 	}
-	go func() { _, _ = io.Copy(console, os.Stdin) }()
-
-	done := make(chan error, 1)
 	go func() {
-		done <- cmd.Wait()
+		_, _ = io.Copy(&lockedWriter{s: srv}, os.Stdin)
 	}()
 
 	select {
 	case sig := <-sigCh:
 		log.Info().Str("signal", sig.String()).Msg("stopping server (press Ctrl+C again to kill it)")
-		return stopServer(cmd.Process, console, done, sigCh, stopTimeout)
-	case err := <-done:
-		if n := reportClientOnlyCrash(serverDir, started); n > 0 && err == nil {
-			// Forge can exit 0 after a mod loading failure.
-			err = fmt.Errorf("server crashed: %d client-only mod(s) must be removed", n)
+		return stopServer(srv.cmd.Process, &lockedWriter{s: srv}, srv.exitCh(), sigCh, stopTimeout)
+	case <-srv.Done():
+		if n := len(srv.ClientOnlyMods()); n > 0 {
+			return fmt.Errorf("server crashed: %d client-only mod(s) must be removed", n)
 		}
-		return err
+		return srv.Wait()
 	}
 }
 
@@ -95,9 +63,13 @@ const stopTimeout = 60 * time.Second
 func stopServer(proc *os.Process, console io.Writer, done <-chan error, again <-chan os.Signal, timeout time.Duration) error {
 	log := logger.Get()
 
-	if _, err := io.WriteString(console, "stop\n"); err != nil {
-		log.Warn().Err(err).Msg("cannot send stop to the server console")
-	}
+	// The write can block when the server stops reading its console, so it
+	// must not hold up the timeout and kill below.
+	go func() {
+		if _, err := io.WriteString(console, "stop\n"); err != nil {
+			log.Warn().Err(err).Msg("cannot send stop to the server console")
+		}
+	}()
 
 	var reason string
 	select {
