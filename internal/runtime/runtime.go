@@ -59,6 +59,9 @@ func Start(serverDir, ram, javaPath string) error {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 
+	// Crash reports written after this are from this run (with slack for
+	// coarse file timestamps).
+	started := time.Now().Add(-2 * time.Second)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start server process: %w", err)
 	}
@@ -74,6 +77,10 @@ func Start(serverDir, ram, javaPath string) error {
 		log.Info().Str("signal", sig.String()).Msg("stopping server (press Ctrl+C again to kill it)")
 		return stopServer(cmd.Process, console, done, sigCh, stopTimeout)
 	case err := <-done:
+		if n := reportClientOnlyCrash(serverDir, started); n > 0 && err == nil {
+			// Forge can exit 0 after a mod loading failure.
+			err = fmt.Errorf("server crashed: %d client-only mod(s) must be removed", n)
+		}
 		return err
 	}
 }
