@@ -12,6 +12,7 @@ import (
 	"github.com/bhhoang/AutoPackMC/internal/downloader"
 	"github.com/bhhoang/AutoPackMC/internal/installer"
 	"github.com/bhhoang/AutoPackMC/internal/java"
+	"github.com/bhhoang/AutoPackMC/internal/modstate"
 	"github.com/bhhoang/AutoPackMC/internal/parser"
 	"github.com/bhhoang/AutoPackMC/internal/resolver"
 	"github.com/bhhoang/AutoPackMC/internal/runtime"
@@ -322,7 +323,7 @@ type setupOptions struct {
 	includeMods        []string
 }
 
-func setupCurseForge(workDir string, opts setupOptions) error {
+func setupCurseForge(workDir string, opts setupOptions) (err error) {
 	log := logger.Get()
 	output, javaPath := opts.output, opts.javaPath
 	forceLoader, forceLoaderVersion, skipClean := opts.forceLoader, opts.forceLoaderVersion, opts.skipClean
@@ -348,6 +349,14 @@ func setupCurseForge(workDir string, opts setupOptions) error {
 	if forceLoaderVersion != "" {
 		loaderVersion = forceLoaderVersion
 	}
+
+	// Jars installed by the previous setup of this server are set aside, and
+	// deleted if this version no longer installs them (restored on failure).
+	update, err := modstate.Begin(output)
+	if err != nil {
+		return fmt.Errorf("prepare mods update: %w", err)
+	}
+	defer func() { update.Finish(err) }()
 
 	modsDir := filepath.Join(output, "mods")
 
@@ -416,7 +425,7 @@ func setupCurseForge(workDir string, opts setupOptions) error {
 	return applyMaxHeap(output, opts.ram)
 }
 
-func setupRaw(workDir string, opts setupOptions) error {
+func setupRaw(workDir string, opts setupOptions) (err error) {
 	log := logger.Get()
 	output, javaPath := opts.output, opts.javaPath
 	forceLoader, forceLoaderVersion, skipClean := opts.forceLoader, opts.forceLoaderVersion, opts.skipClean
@@ -425,6 +434,14 @@ func setupRaw(workDir string, opts setupOptions) error {
 	if err != nil {
 		return fmt.Errorf("parse raw pack: %w", err)
 	}
+
+	// Jars installed by the previous setup of this server are set aside, and
+	// deleted if this version no longer installs them (restored on failure).
+	update, err := modstate.Begin(output)
+	if err != nil {
+		return fmt.Errorf("prepare mods update: %w", err)
+	}
+	defer func() { update.Finish(err) }()
 
 	log.Info().Str("src", workDir).Str("dst", output).Msg("copying raw pack")
 	if err := utils.CopyDir(workDir, output); err != nil {
