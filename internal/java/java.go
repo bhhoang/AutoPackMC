@@ -12,11 +12,9 @@ import (
 	"github.com/bhhoang/AutoPackMC/pkg/utils"
 )
 
-const (
-	// adoptiumURL is the Eclipse Temurin binary download URL template.
-	// Parameters: javaVersion, os, arch
-	adoptiumURL = "https://api.adoptium.net/v3/binary/latest/%d/ga/%s/%s/jdk/hotspot/normal/eclipse"
-)
+// adoptiumAPIBase is the Adoptium API, overridable in tests. Its assets
+// endpoint returns the download link together with the archive's SHA-256.
+var adoptiumAPIBase = "https://api.adoptium.net/v3"
 
 // adoptiumOS maps GOOS values to the Adoptium API OS parameter.
 var adoptiumOS = map[string]string{
@@ -67,7 +65,10 @@ func Download(version int, destDir string) (string, error) {
 		return "", fmt.Errorf("unsupported architecture for automatic Java download: %s", runtime.GOARCH)
 	}
 
-	url := fmt.Sprintf(adoptiumURL, version, osName, archName)
+	pkg, err := latestPackage(version, osName, archName)
+	if err != nil {
+		return "", fmt.Errorf("look up JDK %d: %w", version, err)
+	}
 
 	archiveExt := ".tar.gz"
 	if runtime.GOOS == "windows" {
@@ -77,11 +78,15 @@ func Download(version int, destDir string) (string, error) {
 
 	log.Info().
 		Int("version", version).
-		Str("url", url).
+		Str("url", pkg.Link).
 		Str("dest", archivePath).
 		Msg("downloading JDK")
 
-	if err := utils.DownloadFile(url, archivePath, nil); err != nil {
+	if err := utils.DownloadFile(pkg.Link, archivePath, nil); err != nil {
+		return "", fmt.Errorf("download JDK %d: %w", version, err)
+	}
+	if err := verifySHA256(archivePath, pkg.Checksum); err != nil {
+		_ = os.Remove(archivePath)
 		return "", fmt.Errorf("download JDK %d: %w", version, err)
 	}
 
@@ -90,7 +95,12 @@ func Download(version int, destDir string) (string, error) {
 		Str("dest", destDir).
 		Msg("extracting JDK")
 
+	// Extract into a scratch directory and move the result into place, so
+	// jdkDir only ever holds a complete JDK. Leftovers from an interrupted
+	// earlier attempt are cleared first.
 	extractDir := filepath.Join(destDir, fmt.Sprintf("_jdk-%d-extract", version))
+	_ = os.RemoveAll(extractDir)
+	defer os.RemoveAll(extractDir)
 	if err := utils.EnsureDir(extractDir); err != nil {
 		return "", fmt.Errorf("create JDK extract dir: %w", err)
 	}
@@ -112,6 +122,9 @@ func Download(version int, destDir string) (string, error) {
 		return "", fmt.Errorf("find extracted JDK root: %w", err)
 	}
 
+	// jdkDir lacks a java binary (checked above), so anything there is an
+	// incomplete JDK.
+	_ = os.RemoveAll(jdkDir)
 	if err := os.Rename(topDir, jdkDir); err != nil {
 		return "", fmt.Errorf("rename JDK dir: %w", err)
 	}

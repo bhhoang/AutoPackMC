@@ -45,6 +45,8 @@ type FileInfo struct {
 	FileName     string
 	DownloadURL  string
 	GameVersions []string
+	Size         int64  // expected size in bytes; 0 when unknown
+	SHA1         string // expected SHA-1 (hex); empty when unknown
 }
 
 // IsClientOnly returns true when the file is tagged for the Client side but
@@ -90,6 +92,10 @@ type Downloader struct {
 	excludedMu       sync.RWMutex
 	excludedProjects map[int]string
 
+	// SHA-1 of manifest files by file ID, from prefetchHashes.
+	hashMu     sync.RWMutex
+	fileHashes map[int]string
+
 	// Endpoints, overridable in tests.
 	siteAPIBase     string
 	officialAPIBase string
@@ -122,6 +128,7 @@ func (d *Downloader) DownloadMods(manifest *parser.Manifest, destDir string) err
 	if err := utils.EnsureDir(destDir); err != nil {
 		return fmt.Errorf("create mods dir: %w", err)
 	}
+	d.prefetchHashes(manifest)
 
 	tasks := make(chan Task, len(manifest.Files))
 	for _, f := range manifest.Files {
@@ -245,6 +252,11 @@ func (d *Downloader) downloadMod(t Task) error {
 		candidates = append(candidates, fallback)
 	}
 
+	// Downloads land in a temporary file and only enter the cache once they
+	// match the size and SHA-1 CurseForge publishes, so the cache never serves
+	// a corrupt jar.
+	size, sum := d.expectedChecksum(t.ProjectID, t.FileID)
+	tmpFile := cacheFile + ".verify"
 	var downloadErr error
 	for i, candidate := range candidates {
 		if i > 0 {
@@ -255,10 +267,17 @@ func (d *Downloader) downloadMod(t Task) error {
 				Err(downloadErr).
 				Msg("retrying download from the CurseForge CDN")
 		}
-		downloadErr = downloadWithRetry(candidate, cacheFile, headers)
+		downloadErr = downloadWithRetry(candidate, tmpFile, headers)
+		if downloadErr == nil {
+			downloadErr = verifyFile(tmpFile, size, sum)
+		}
+		if downloadErr == nil {
+			downloadErr = os.Rename(tmpFile, cacheFile)
+		}
 		if downloadErr == nil {
 			break
 		}
+		_ = os.Remove(tmpFile)
 	}
 	if downloadErr != nil {
 		return fmt.Errorf("download mod %d/%d: %w", t.ProjectID, t.FileID, downloadErr)
@@ -347,6 +366,7 @@ func (d *Downloader) fetchFileInfoFromSite(projectID, fileID int) (*FileInfo, er
 		Data *struct {
 			FileName     string   `json:"fileName"`
 			GameVersions []string `json:"gameVersions"`
+			FileLength   int64    `json:"fileLength"`
 		} `json:"data"`
 	}
 	if jsonErr := json.Unmarshal(body, &result); jsonErr != nil {
@@ -362,6 +382,7 @@ func (d *Downloader) fetchFileInfoFromSite(projectID, fileID int) (*FileInfo, er
 		// redirects to the CDN for every file it lists.
 		DownloadURL:  fmt.Sprintf("%s/mods/%d/files/%d/download", d.siteAPIBase, projectID, fileID),
 		GameVersions: result.Data.GameVersions,
+		Size:         result.Data.FileLength,
 	}, nil
 }
 
@@ -393,11 +414,7 @@ func (d *Downloader) fetchFileInfoFromOfficialAPI(projectID, fileID int) (*FileI
 
 	body, _ := io.ReadAll(resp.Body)
 	var result struct {
-		Data *struct {
-			FileName     string   `json:"fileName"`
-			DownloadURL  string   `json:"downloadUrl"`
-			GameVersions []string `json:"gameVersions"`
-		} `json:"data"`
+		Data *officialFile `json:"data"`
 	}
 	if jsonErr := json.Unmarshal(body, &result); jsonErr != nil {
 		return nil, fmt.Errorf("parse official CurseForge API response: %w", jsonErr)
@@ -417,6 +434,8 @@ func (d *Downloader) fetchFileInfoFromOfficialAPI(projectID, fileID int) (*FileI
 		FileName:     result.Data.FileName,
 		DownloadURL:  downloadURL,
 		GameVersions: result.Data.GameVersions,
+		Size:         result.Data.FileLength,
+		SHA1:         result.Data.sha1(),
 	}, nil
 }
 
@@ -499,6 +518,7 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 	if err := utils.EnsureDir(destDir); err != nil {
 		return fmt.Errorf("create mods dir: %w", err)
 	}
+	d.prefetchHashes(manifest)
 
 	existingFiles, err := listDirFiles(destDir)
 	if err != nil {
