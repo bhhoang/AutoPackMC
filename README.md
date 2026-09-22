@@ -22,9 +22,32 @@
 
 ---
 
+## Desktop app (Windows)
+
+**AutoPack** is a window for people who would rather not use a terminal. It does everything `mcpackctl` does, in English or Vietnamese:
+
+- **New server** — paste a CurseForge or Google Drive link, or choose a `.zip`, pick a folder and how much memory to give the server, and accept the Minecraft EULA. Progress is shown step by step.
+- **Start and stop** — one button each. Stopping sends `stop`, so the world is saved. Closing the window while a server runs asks first, then stops it cleanly.
+- **How friends join** — shows the address to share on the same Wi-Fi, and finds the internet address when asked (this contacts `api.ipify.org`).
+- **Crashes** — when a client-only mod crashes the server, the app names it and offers to turn it off and start again.
+- **Mods** — see which mods are on the server and which were left off, turn mods off or back on, search CurseForge for mods made for the server's Minecraft version and loader, paste a mod link, or add `.jar` files. Pack updates keep the mods you add and the ones you turn off.
+- **Server messages** — the live console, with a box to type commands.
+
+Settings, the server list and a log file (`autopack.log`) live in `%APPDATA%\AutoPack`. Mods you turn off are renamed to `*.jar.disabled` in `mods/`.
+
+Build it on Windows (needs the WebView2 runtime, which Windows 10 and 11 include):
+
+```bash
+go build -tags desktop,production -ldflags "-H windowsgui" -o AutoPack.exe ./cmd/autopack
+```
+
+The page is plain HTML, CSS and JavaScript in `cmd/autopack/frontend/`, embedded into the executable; there is no npm build step. Fonts are bundled so the app works offline.
+
+---
+
 ## Installation
 
-**Requirements:** Go ≥ 1.22
+**Requirements:** Go ≥ 1.25
 
 ```bash
 git clone https://github.com/bhhoang/AutoPackMC.git
@@ -255,8 +278,11 @@ mcpackctl setup --input pack.zip --output ./server
 ## Project Structure
 ```
 cmd/mcpackctl/       CLI entrypoint (main.go)
+cmd/autopack/        Desktop app (Wails window + embedded frontend/)
 internal/
+  app/               Desktop app logic: servers, setup jobs, running servers, mods
   cmd/               Cobra command definitions
+  setup/             Turn a pack into a ready server (shared by the CLI and the app)
   detector/          Detect pack type and Google Drive URLs
   parser/            Parse manifest.json or raw folder
   downloader/        Parallel mod downloader with cache, checksums & exclude list

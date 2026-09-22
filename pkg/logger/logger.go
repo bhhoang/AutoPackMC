@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -38,4 +39,16 @@ func Get() *zerolog.Logger {
 		instance = zerolog.New(output).Level(zerolog.InfoLevel).With().Timestamp().Logger()
 	})
 	return &instance
+}
+
+// SetOutput sends log output to w as plain text lines without colours. The
+// desktop app calls it at startup, before anything logs.
+func SetOutput(w io.Writer, level string) {
+	once.Do(func() {})
+	lvl, err := zerolog.ParseLevel(level)
+	if err != nil {
+		lvl = zerolog.InfoLevel
+	}
+	output := zerolog.ConsoleWriter{Out: w, NoColor: true, TimeFormat: time.RFC3339}
+	instance = zerolog.New(output).Level(lvl).With().Timestamp().Logger()
 }

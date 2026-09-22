@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoPack</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<div class="window glass" role="application" aria-label="AutoPack">
+  <div class="titlebar">
+    <div class="app-mark"><span class="ms fill">deployed_code</span></div>
+    <span class="name">AutoPack</span>
+    <div class="lang-seg" role="group" data-i18n-aria="language">
+      <button type="button" data-lang-set="en" lang="en" aria-label="English">EN</button>
+      <button type="button" data-lang-set="vi" lang="vi" aria-label="Tiếng Việt">VI</button>
+    </div>
+    <div class="ctrls">
+      <button type="button" data-win="min" data-i18n-aria="winMin"><span class="ms">remove</span></button>
+      <button type="button" data-win="max" data-i18n-aria="winMax"><span class="ms" id="maxIcon">crop_square</span></button>
+      <button type="button" data-win="close" class="x" data-i18n-aria="close"><span class="ms">close</span></button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <nav class="side" data-i18n-aria="yourServers">
+      <h2 data-i18n="yourServers"></h2>
+      <div class="srv-list" id="srvList"></div>
+      <button class="btn full" type="button" id="newBtn"><span class="ms">add</span><span data-i18n="newServer"></span></button>
+      <div class="grow"></div>
+      <button class="side-link" type="button" id="settingsBtn"><span class="ms">settings</span><span data-i18n="settings"></span></button>
+      <button class="side-link" type="button" data-open="https://github.com/bhhoang/AutoPackMC#readme"><span class="ms">help</span><span data-i18n="help"></span></button>
+    </nav>
+
+    <main class="main" id="main">
+
+      <!-- Welcome -->
+      <section class="view" id="v-welcome" hidden>
+        <div class="welcome">
+          <div class="card hero">
+            <h1 data-i18n="welcomeTitle"></h1>
+            <p data-i18n="welcomeLead"></p>
+            <div><button class="btn primary big" type="button" data-go="new"><span class="ms">add</span><span data-i18n="createServer"></span></button></div>
+          </div>
+          <div class="how">
+            <div class="card"><div class="ic"><span class="ms">link</span></div><div><b data-i18n="how1"></b><span data-i18n="how1d"></span></div></div>
+            <div class="card"><div class="ic"><span class="ms">download</span></div><div><b data-i18n="how2"></b><span data-i18n="how2d"></span></div></div>
+            <div class="card"><div class="ic"><span class="ms">group</span></div><div><b data-i18n="how3"></b><span data-i18n="how3d"></span></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Server -->
+      <section class="view" id="v-server" hidden>
+        <div class="head">
+          <div class="pack-tile" id="hTile"></div>
+          <div>
+            <h1 id="hName"></h1>
+            <div class="meta" id="hMeta"></div>
+          </div>
+          <div class="tabs" role="tablist" data-i18n-aria="serverSections">
+            <button role="tab" aria-selected="true" data-tab="overview" id="t-overview"><span class="ms">space_dashboard</span><span data-i18n="tabOverview"></span></button>
+            <button role="tab" aria-selected="false" data-tab="mods" id="t-mods"><span class="ms">extension</span><span data-i18n="tabMods"></span></button>
+            <button role="tab" aria-selected="false" data-tab="console" id="t-console"><span class="ms">terminal</span><span data-i18n="tabConsole"></span></button>
+          </div>
+        </div>
+
+        <div role="tabpanel" id="p-overview" aria-labelledby="t-overview">
+          <div class="ov">
+            <div class="card status" id="statusCard">
+              <div class="glow"></div>
+              <div class="status-main">
+                <span class="pill" id="sPill"></span>
+                <h2 id="sTitle"></h2>
+                <p class="lead" id="sLead"></p>
+                <div id="sExtra"></div>
+              </div>
+              <div class="actions" id="sActions"></div>
+            </div>
+
+            <div class="card side-card">
+              <h3><span class="ms">share</span><span data-i18n="friendsJoin"></span></h3>
+              <div class="addr-row">
+                <span class="addr-label" data-i18n="sameWifi"></span>
+                <div class="addr num" id="addrLan"></div>
+                <button class="btn sm" type="button" data-copy="addrLan"><span class="ms">content_copy</span><span data-i18n="copy"></span></button>
+              </div>
+              <div class="addr-row" id="wanRow">
+                <span class="addr-label" data-i18n="internet"></span>
+                <div class="addr num" id="addrWan"></div>
+                <button class="btn sm" type="button" data-copy="addrWan" id="wanCopy"><span class="ms">content_copy</span><span data-i18n="copy"></span></button>
+              </div>
+              <p class="small"><span data-i18n="routerNote"></span> <button class="link" type="button" data-open="https://portforward.com/minecraft/" data-i18n="showMeHow"></button></p>
+            </div>
+
+            <div class="card side-card">
+              <div class="mem-top">
+                <h3><span class="ms">memory</span><span data-i18n="memTitle"></span></h3>
+                <div class="mem-val num"><span id="memVal"></span> <small>GB</small></div>
+              </div>
+              <div>
+                <input type="range" id="mem" min="2" max="14" step="1" aria-describedby="memNote memHint" data-i18n-aria="memAria">
+                <div class="mem-scale num" aria-hidden="true"><span id="memMin"></span><span id="memMax"></span></div>
+              </div>
+              <div class="mem-foot">
+                <div class="mem-hint ok" id="memHint"></div>
+                <span class="small" id="memNote"></span>
+              </div>
+            </div>
+
+            <div class="card recent">
+              <div class="recent-head">
+                <h3><span class="ms">terminal</span><span data-i18n="latestMsgs"></span></h3>
+                <button class="btn sm ghost" type="button" data-tab="console"><span data-i18n="showAll"></span><span class="ms">arrow_forward</span></button>
+              </div>
+              <div class="log" id="logMini"></div>
+            </div>
+          </div>
+        </div>
+
+        <div role="tabpanel" id="p-mods" aria-labelledby="t-mods" hidden>
+          <div class="view">
+            <div class="mods-top">
+              <div class="search">
+                <span class="ms">search</span>
+                <label for="modSearch" class="sr" data-i18n="searchServerMods"></label>
+                <input class="input" id="modSearch" type="search" data-i18n-ph="searchServerMods">
+              </div>
+              <button class="btn" type="button" id="addModBtn" aria-expanded="false" aria-controls="addPanel"><span class="ms">add</span><span data-i18n="addMods"></span></button>
+            </div>
+            <div class="chips" role="group" data-i18n-aria="filterMods">
+              <button class="chip" type="button" data-filter="all" aria-pressed="true" data-i18n="fAll"></button>
+              <button class="chip" type="button" data-filter="on" aria-pressed="false" data-i18n="fOn"></button>
+              <button class="chip" type="button" data-filter="off" aria-pressed="false" data-i18n="fOff"></button>
+              <button class="chip" type="button" data-filter="mine" aria-pressed="false" data-i18n="fMine"></button>
+            </div>
+
+            <div class="card add-panel" id="addPanel" hidden>
+              <div class="add-head">
+                <h3><span class="ms">extension</span><span data-i18n="addTitle"></span></h3>
+                <button class="btn sm ghost" type="button" id="addClose" data-i18n-aria="close"><span class="ms">close</span></button>
+              </div>
+              <div class="field" style="margin-top:0">
+                <label for="modUrl" data-i18n="findMod"></label>
+                <div class="search">
+                  <span class="ms">search</span>
+                  <input class="input" id="modUrl" type="search" data-i18n-ph="findModPh" aria-describedby="modUrlHelp modUrlErr" aria-controls="modResults" autocomplete="off">
+                </div>
+                <span class="help" id="modUrlHelp"></span>
+                <span class="err" id="modUrlErr" hidden><span class="ms">error</span><span id="modUrlErrTxt"></span></span>
+              </div>
+              <div class="found-mod" id="modFound" hidden></div>
+              <div class="results-wrap" id="modResultsWrap" hidden>
+                <div class="results-head" id="modResultsHead"></div>
+                <div class="results" id="modResults" role="list" aria-live="polite"></div>
+              </div>
+              <div class="or" data-i18n="or"></div>
+              <button class="drop" type="button" id="jarDrop">
+                <span class="ms">upload_file</span>
+                <div><b data-i18n="chooseJars"></b><span class="small" data-i18n="dragThem"></span></div>
+              </button>
+              <p class="help add-note"><span class="ms">info</span><span data-i18n="addNote"></span></p>
+            </div>
+
+            <div class="notice" id="restartNote" hidden>
+              <span class="ms">restart_alt</span><span data-i18n="restartNote"></span>
+              <button class="btn sm" type="button" data-act="restart" data-i18n="restartNow"></button>
+            </div>
+            <p class="help" data-i18n="modsHelp"></p>
+            <div class="mods" id="modList"></div>
+          </div>
+        </div>
+
+        <div role="tabpanel" id="p-console" aria-labelledby="t-console" hidden>
+          <div class="console">
+            <div class="log" id="logFull"></div>
+            <form class="cmd" id="cmdForm">
+              <label for="cmdIn" class="sr" data-i18n="cmdLabel"></label>
+              <input class="input" id="cmdIn" data-i18n-ph="cmdPh" autocomplete="off">
+              <button class="btn primary" type="submit" id="cmdBtn"><span class="ms">send</span><span data-i18n="send"></span></button>
+            </form>
+            <p class="small" id="cmdHint"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- New server / update -->
+      <section class="view" id="v-new" hidden>
+        <div class="head">
+          <div>
+            <h1 id="newTitle"></h1>
+            <div class="meta" id="newMeta"></div>
+          </div>
+        </div>
+        <form class="form" id="newForm" novalidate>
+          <div class="card step" id="st1">
+            <div class="step-n">1</div>
+            <div>
+              <h3 data-i18n="whichPack"></h3>
+              <div class="field">
+                <label for="packUrl" data-i18n="packLink"></label>
+                <input class="input" id="packUrl" type="url" placeholder="https://www.curseforge.com/minecraft/modpacks/..." aria-describedby="packHelp packErr" autocomplete="off">
+                <span class="help" id="packHelp" data-i18n="packHelp"></span>
+                <span class="err" id="packErr" hidden><span class="ms">error</span><span id="packErrTxt"></span></span>
+                <div class="found" id="packFound" hidden></div>
+              </div>
+              <div class="or" data-i18n="or"></div>
+              <button class="drop" type="button" id="drop">
+                <span class="ms">folder_zip</span>
+                <div><b id="dropName" data-i18n="chooseZip"></b><span class="small" data-i18n="dragIt"></span></div>
+              </button>
+            </div>
+          </div>
+
+          <div class="card step" id="st2">
+            <div class="step-n">2</div>
+            <div>
+              <h3 data-i18n="whereGo"></h3>
+              <div class="field" id="folderField">
+                <label for="outDir" data-i18n="serverFolder"></label>
+                <div class="row">
+                  <input class="input" id="outDir" readonly>
+                  <button class="btn" type="button" id="pickDir" data-i18n="change"></button>
+                </div>
+                <span class="help" data-i18n="freeSpace"></span>
+              </div>
+              <div class="field">
+                <span style="font-weight:600;font-size:14px" id="ramLbl" data-i18n="memTitle"></span>
+                <div class="seg" role="radiogroup" aria-labelledby="ramLbl" id="ramSeg"></div>
+                <span class="help" id="ramHelp"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card step" id="st3">
+            <div class="step-n">3</div>
+            <div>
+              <h3 data-i18n="eulaTitle"></h3>
+              <p class="sub" data-i18n="eulaSub"></p>
+              <label class="check" for="eula">
+                <input type="checkbox" id="eula">
+                <span><span data-i18n="eulaBefore"></span> <button class="link" type="button" data-open="https://aka.ms/MinecraftEULA" data-i18n="eulaLink"></button><span data-i18n="eulaAfter"></span></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="update-note" id="updateNote" hidden><span class="ms">info</span><span data-i18n="updateNote"></span></div>
+
+          <details class="adv" id="advanced">
+            <summary><span class="ms">tune</span><span data-i18n="advanced"></span><span class="small" style="font-weight:500" data-i18n="advancedSkip"></span><span class="ms chev">expand_more</span></summary>
+            <div class="inner">
+              <div class="field">
+                <label for="optJava">Java</label>
+                <select class="input" id="optJava">
+                  <option value="auto" data-i18n="auto"></option>
+                  <option value="8">Java 8</option>
+                  <option value="17">Java 17</option>
+                  <option value="21">Java 21</option>
+                  <option value="pick" data-i18n="chooseJava"></option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="optLoader" data-i18n="modLoader"></label>
+                <select class="input" id="optLoader">
+                  <option value="auto" data-i18n="auto"></option>
+                  <option value="forge">Forge</option>
+                  <option value="neoforge">NeoForge</option>
+                  <option value="fabric">Fabric</option>
+                </select>
+              </div>
+              <div class="field wide">
+                <div class="toggle">
+                  <div><b style="font-size:14px" data-i18n="cleanToggle"></b><div class="help" data-i18n="cleanHelp"></div></div>
+                  <span class="switch"><input type="checkbox" id="optClean" checked data-i18n-aria="cleanToggle"><i></i></span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="optExcl" data-i18n="alwaysOff"></label>
+                <input class="input" id="optExcl" data-i18n-ph="egOculus" aria-describedby="exclHelp">
+                <span class="help" id="exclHelp" data-i18n="alwaysOffHelp"></span>
+              </div>
+              <div class="field">
+                <label for="optIncl" data-i18n="alwaysKeep"></label>
+                <input class="input" id="optIncl" data-i18n-ph="egCtm" aria-describedby="inclHelp">
+                <span class="help" id="inclHelp" data-i18n="alwaysKeepHelp"></span>
+              </div>
+            </div>
+          </details>
+
+          <div class="form-foot">
+            <button class="btn primary big" type="submit" id="setupBtn" disabled><span class="ms">rocket_launch</span><span id="setupBtnTxt" data-i18n="setUp"></span></button>
+            <button class="btn ghost" type="button" data-go="back" data-i18n="cancel"></button>
+            <span class="small" id="setupWhy"></span>
+          </div>
+        </form>
+      </section>
+
+      <!-- Setup progress -->
+      <section class="view" id="v-progress" hidden>
+        <div class="prog">
+          <div class="head">
+            <div class="pack-tile" id="pTile"></div>
+            <div>
+              <h1 id="pTitle"></h1>
+              <div class="meta" id="pSub"></div>
+            </div>
+          </div>
+          <div class="card prog-card" id="pCard">
+            <div class="bar" aria-hidden="true"><i id="pBar"></i></div>
+            <div class="row" style="justify-content:space-between;margin-top:8px">
+              <span class="small num" id="pPct"></span>
+              <span class="small num" id="pEta"></span>
+            </div>
+            <ol class="tasks" id="tasks" aria-live="polite"></ol>
+          </div>
+          <div class="card err-card" id="pError" hidden>
+            <span class="pill bad"><span class="ms fill">error</span><span data-i18n="setupFailedPill"></span></span>
+            <h2 data-i18n="setupFailed"></h2>
+            <p class="lead" id="pErrMsg"></p>
+            <details class="more"><summary data-i18n="details"></summary><div class="details" id="pErrDetail"></div></details>
+          </div>
+          <div class="card" id="pFailed" hidden>
+            <h3><span class="ms">warning</span><span id="pFailedTitle"></span></h3>
+            <p class="help" style="margin-top:6px" data-i18n="failedHelp"></p>
+            <div class="failed-list" id="pFailedList"></div>
+          </div>
+          <div class="form-foot" id="pFoot"></div>
+        </div>
+      </section>
+
+      <!-- Settings -->
+      <section class="view" id="v-settings" hidden>
+        <div class="head"><div><h1 data-i18n="settings"></h1><div class="meta" data-i18n="settingsMeta"></div></div></div>
+        <div class="set-grid">
+          <div class="card">
+            <h3><span class="ms">translate</span><span data-i18n="language"></span></h3>
+            <div class="theme-seg two" role="group" data-i18n-aria="language">
+              <button type="button" data-lang-set="en" lang="en">English</button>
+              <button type="button" data-lang-set="vi" lang="vi">Tiếng Việt</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3><span class="ms">contrast</span><span data-i18n="appearance"></span></h3>
+            <div class="theme-seg" role="group" data-i18n-aria="appearance">
+              <button type="button" data-theme-set="system"><span class="ms">computer</span><span data-i18n="themeSystem"></span></button>
+              <button type="button" data-theme-set="light"><span class="ms">light_mode</span><span data-i18n="themeDay"></span></button>
+              <button type="button" data-theme-set="dark"><span class="ms">dark_mode</span><span data-i18n="themeNight"></span></button>
+            </div>
+          </div>
+          <div class="card">
+            <h3><span class="ms">coffee</span>Java</h3>
+            <p class="help" style="margin-top:8px" data-i18n="javaHelp"></p>
+            <div class="toggle"><b style="font-size:14px" data-i18n="javaAuto"></b><span class="switch"><input type="checkbox" id="setJava" data-i18n-aria="javaAuto"><i></i></span></div>
+          </div>
+          <div class="card">
+            <h3><span class="ms">folder</span><span data-i18n="whereNew"></span></h3>
+            <div class="field">
+              <label for="setDir" data-i18n="defaultFolder"></label>
+              <div class="row"><input class="input" id="setDir" readonly><button class="btn" type="button" id="pickSetDir" data-i18n="change"></button></div>
+            </div>
+          </div>
+          <div class="card wide">
+            <h3><span class="ms">key</span><span data-i18n="cfKey"></span></h3>
+            <div class="field">
+              <label for="setKey" data-i18n="apiKey"></label>
+              <input class="input" id="setKey" type="password" data-i18n-ph="apiKeyPh" aria-describedby="keyHelp" autocomplete="off">
+              <span class="help" id="keyHelp" data-i18n="apiKeyHelp"></span>
+            </div>
+          </div>
+        </div>
+        <p class="version" id="version"></p>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<div class="modal-back" id="closeDlg" hidden>
+  <div class="modal glass" role="alertdialog" aria-modal="true" aria-labelledby="closeTitle" aria-describedby="closeText">
+    <h2 id="closeTitle"></h2>
+    <p class="lead" id="closeText"></p>
+    <div class="row">
+      <button class="btn" type="button" id="closeKeep" data-i18n="closeKeep"></button>
+      <button class="btn primary" type="button" id="closeStop"><span class="ms fill">stop</span><span data-i18n="closeStop"></span></button>
+    </div>
+  </div>
+</div>
+
+<div class="toast glass" id="toast" role="status"><span class="ms fill" id="toastIcon">check_circle</span><span id="toastMsg"></span></div>
+
+<script src="i18n.js"></script>
+<script src="scene.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
