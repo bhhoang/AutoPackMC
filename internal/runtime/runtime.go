@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -44,18 +45,24 @@ func Start(serverDir, ram, javaPath string) error {
 
 	cmd := exec.Command(javaPath, args...) // #nosec G204
 	cmd.Dir = serverDir
-	// Forward stdin so console commands such as "stop" reach the server.
-	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// The server console is fed through a pipe so that, besides forwarding
+	// what the user types, "stop" can be sent on shutdown.
+	console, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("open server console: %w", err)
+	}
+
+	// Watch for signals before starting so an early Ctrl+C is not missed.
+	sigCh := make(chan os.Signal, 2)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start server process: %w", err)
 	}
-
-	// Handle graceful shutdown on SIGINT / SIGTERM
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() { _, _ = io.Copy(console, os.Stdin) }()
 
 	done := make(chan error, 1)
 	go func() {
@@ -64,14 +71,45 @@ func Start(serverDir, ram, javaPath string) error {
 
 	select {
 	case sig := <-sigCh:
-		log.Info().Str("signal", sig.String()).Msg("received signal, stopping server")
-		if cmd.Process != nil {
-			_ = cmd.Process.Signal(syscall.SIGTERM)
-		}
-		return <-done
+		log.Info().Str("signal", sig.String()).Msg("stopping server (press Ctrl+C again to kill it)")
+		return stopServer(cmd.Process, console, done, sigCh, stopTimeout)
 	case err := <-done:
 		return err
 	}
+}
+
+// stopTimeout is how long the server may take to save and exit after "stop".
+const stopTimeout = 60 * time.Second
+
+// stopServer asks the server to shut down cleanly by sending "stop" to its
+// console, which saves the worlds; a signal-based stop is unsupported on
+// Windows and would skip that. The process is killed if it has not exited
+// after timeout or when another signal arrives on again.
+func stopServer(proc *os.Process, console io.Writer, done <-chan error, again <-chan os.Signal, timeout time.Duration) error {
+	log := logger.Get()
+
+	if _, err := io.WriteString(console, "stop\n"); err != nil {
+		log.Warn().Err(err).Msg("cannot send stop to the server console")
+	}
+
+	var reason string
+	select {
+	case <-done:
+		// Stopped as requested; its exit status is not a failure here.
+		log.Info().Msg("server stopped")
+		return nil
+	case <-again:
+		reason = "second interrupt"
+	case <-time.After(timeout):
+		reason = fmt.Sprintf("server did not stop within %s", timeout)
+	}
+
+	log.Warn().Str("reason", reason).Msg("killing server; unsaved progress may be lost")
+	if err := proc.Kill(); err != nil {
+		return fmt.Errorf("kill server: %w", err)
+	}
+	<-done
+	return fmt.Errorf("server killed: %s", reason)
 }
 
 // buildLaunchArgs inspects serverDir and returns the server JAR (or args file)
