@@ -348,14 +348,22 @@ func DownloadFileOnce(url, dest string, headers map[string]string) error {
 		return &HTTPStatusError{StatusCode: resp.StatusCode, URL: url}
 	}
 
-	out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	// Write to a temporary file and rename it into place once complete, so an
+	// interrupted download never leaves a truncated file at dest.
+	part := dest + ".part"
+	out, err := os.OpenFile(part, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-
 	_, err = io.Copy(out, resp.Body)
-	return err
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(part)
+		return err
+	}
+	return os.Rename(part, dest)
 }
 
 var driveFileIDRegex = regexp.MustCompile(`/d/([a-zA-Z0-9_-]+)`)

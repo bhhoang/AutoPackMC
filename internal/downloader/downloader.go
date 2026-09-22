@@ -181,18 +181,6 @@ func logClientOnlySkip(projectID, fileID int, fi *FileInfo) {
 func (d *Downloader) downloadMod(t Task) error {
 	log := logger.Get()
 
-	cacheFile := filepath.Join(d.CacheDir, fmt.Sprintf(cacheKeyFormat, t.ProjectID, t.FileID))
-
-	// Serve from cache if available
-	if utils.FileExists(cacheFile) {
-		log.Debug().
-			Int("projectID", t.ProjectID).
-			Int("fileID", t.FileID).
-			Msg("cache hit, copying from cache")
-		destFile := filepath.Join(t.DestDir, fmt.Sprintf(cacheKeyFormat, t.ProjectID, t.FileID))
-		return utils.CopyDir(cacheFile, destFile) // single file copy via CopyDir is fine but use direct copy
-	}
-
 	var downloadURL, filename string
 	if t.ResolvedFilename != "" {
 		// Filename already resolved upstream; build the download URL directly to
@@ -216,13 +204,26 @@ func (d *Downloader) downloadMod(t Task) error {
 		filename = fi.FileName
 	}
 
-	if err := utils.EnsureDir(d.CacheDir); err != nil {
-		return err
+	destFilename := filename
+	if destFilename == "" {
+		destFilename = fmt.Sprintf(cacheKeyFormat, t.ProjectID, t.FileID)
+	}
+	destFile := filepath.Join(t.DestDir, destFilename)
+
+	// Cache entries are keyed by project and file ID, which unlike filenames
+	// are unique. Downloads are written atomically, so an entry is complete.
+	cacheFile := filepath.Join(d.CacheDir, fmt.Sprintf(cacheKeyFormat, t.ProjectID, t.FileID))
+	if utils.FileExists(cacheFile) {
+		log.Debug().
+			Int("projectID", t.ProjectID).
+			Int("fileID", t.FileID).
+			Str("filename", destFilename).
+			Msg("cache hit, copying from cache")
+		return copyFileSimple(cacheFile, destFile)
 	}
 
-	// Use the real filename for the cache entry when known
-	if filename != "" {
-		cacheFile = filepath.Join(d.CacheDir, filename)
+	if err := utils.EnsureDir(d.CacheDir); err != nil {
+		return err
 	}
 
 	log.Info().
@@ -262,12 +263,6 @@ func (d *Downloader) downloadMod(t Task) error {
 	if downloadErr != nil {
 		return fmt.Errorf("download mod %d/%d: %w", t.ProjectID, t.FileID, downloadErr)
 	}
-
-	destFilename := filename
-	if destFilename == "" {
-		destFilename = fmt.Sprintf(cacheKeyFormat, t.ProjectID, t.FileID)
-	}
-	destFile := filepath.Join(t.DestDir, destFilename)
 
 	return copyFileSimple(cacheFile, destFile)
 }
