@@ -91,6 +91,7 @@ type Downloader struct {
 	// mapped to their slugs. Set by ApplyExcludeList.
 	excludedMu       sync.RWMutex
 	excludedProjects map[int]string
+	forcedProjects   map[int]bool // kept even when tagged client-only
 
 	// SHA-1 of manifest files by file ID, from prefetchHashes.
 	hashMu     sync.RWMutex
@@ -203,7 +204,7 @@ func (d *Downloader) downloadMod(t Task) error {
 		if err != nil {
 			return err
 		}
-		if d.FilterClientOnly && fi.IsClientOnly() {
+		if d.FilterClientOnly && fi.IsClientOnly() && !d.forceIncluded(t.ProjectID) {
 			logClientOnlySkip(t.ProjectID, t.FileID, fi)
 			return nil
 		}
@@ -559,7 +560,7 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 			continue
 		}
 
-		if d.FilterClientOnly && fi.IsClientOnly() {
+		if d.FilterClientOnly && fi.IsClientOnly() && !d.forceIncluded(f.ProjectID) {
 			logClientOnlySkip(f.ProjectID, f.FileID, fi)
 			continue
 		}
@@ -655,7 +656,8 @@ func (d *Downloader) CleanMods(manifest *parser.Manifest, modsDir string) ([]str
 		}
 
 		excludedSlug, excluded := d.excludedSlug(f.ProjectID)
-		if !fi.IsClientOnly() && !excluded {
+		tagged := fi.IsClientOnly() && !d.forceIncluded(f.ProjectID)
+		if !tagged && !excluded {
 			continue
 		}
 

@@ -97,7 +97,7 @@ func reportClientOnlyCrash(serverDir string, since time.Time) int {
 			if mod.File != "" {
 				ev = ev.Str("file", filepath.Join("mods", mod.File))
 			}
-			ev.Msg("client-only mod crashed the server; remove it from mods/ (or add it to the exclude list) and start again")
+			ev.Msg("client-only mod crashed the server; remove it from mods/ and start again (pass its CurseForge slug to setup --exclude-mods to keep it out)")
 		}
 	}
 	return found

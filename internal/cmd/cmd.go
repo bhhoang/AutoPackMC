@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/bhhoang/AutoPackMC/internal/cleaner"
 	"github.com/bhhoang/AutoPackMC/internal/detector"
@@ -107,6 +108,7 @@ Input may be:
 	cmd.Flags().String("force-loader", "", "override loader type: forge or fabric")
 	cmd.Flags().String("loader-version", "", "override loader version (e.g. 47.4.0)")
 	cmd.Flags().Bool("skip-clean", false, "skip removal of client-only mods")
+	addModOverrideFlags(cmd)
 
 	return cmd
 }
@@ -132,6 +134,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	forceLoader, _ := cmd.Flags().GetString("force-loader")
 	forceLoaderVersion, _ := cmd.Flags().GetString("loader-version")
 	skipClean, _ := cmd.Flags().GetBool("skip-clean")
+	excludeMods, includeMods := modOverrides(cmd)
 
 	if ram == "" {
 		ram = viper.GetString("ram")
@@ -156,6 +159,8 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			forceLoaderVersion: forceLoaderVersion,
 			skipClean:          skipClean,
 			ram:                ram,
+			excludeMods:        excludeMods,
+			includeMods:        includeMods,
 		}
 	}
 
@@ -313,6 +318,8 @@ type setupOptions struct {
 	forceLoaderVersion string
 	skipClean          bool
 	ram                string // max heap from --ram or config; empty to leave as is
+	excludeMods        []string
+	includeMods        []string
 }
 
 func setupCurseForge(workDir string, opts setupOptions) error {
@@ -349,7 +356,7 @@ func setupCurseForge(workDir string, opts setupOptions) error {
 	workers := viper.GetInt("workers")
 	dl := downloader.New(cacheDir, apiKey, workers, !skipClean)
 	if !skipClean {
-		applyExcludeList(dl, manifest, opts.packSlug, cacheDir)
+		applyExcludeList(dl, manifest, opts.packSlug, cacheDir, opts.excludeMods, opts.includeMods)
 	}
 
 	// Mods that no download route could fetch are listed once the setup is
@@ -553,6 +560,7 @@ used as a fallback.`,
 	cmd.Flags().String("mods-dir", "", "path to the mods directory to clean (required)")
 	cmd.Flags().String("manifest", "", "path to a CurseForge manifest.json for API-based detection (recommended)")
 	cmd.Flags().String("api-key", "", "CurseForge API key (falls back to MCPACKCTL_CURSEFORGE_API_KEY / config)")
+	addModOverrideFlags(cmd)
 	_ = cmd.MarkFlagRequired("mods-dir")
 
 	return cmd
@@ -582,7 +590,8 @@ func runClean(cmd *cobra.Command, _ []string) error {
 		cacheDir := viper.GetString("cache_dir")
 		workers := viper.GetInt("workers")
 		dl := downloader.New(cacheDir, apiKey, workers, true)
-		applyExcludeList(dl, manifest, "", cacheDir)
+		excludeMods, includeMods := modOverrides(cmd)
+		applyExcludeList(dl, manifest, "", cacheDir, excludeMods, includeMods)
 
 		log.Info().Str("dir", modsDir).Msg("cleaning client-only mods using CurseForge API")
 		removed, err := dl.CleanMods(manifest, modsDir)
@@ -644,25 +653,47 @@ func isAutoJava(javaPath string, javaPathExplicit bool, javaVersion int) bool {
 	return !javaPathExplicit && javaVersion <= 0 && javaPath == "java"
 }
 
-// applyExcludeList loads the configured client-only exclude list and applies
-// it to dl. The list only refines client-only detection, so any failure is
-// logged and setup continues without it.
-func applyExcludeList(dl *downloader.Downloader, manifest *parser.Manifest, packSlug, cacheDir string) {
+// applyExcludeList loads the configured client-only exclude list, adds the
+// user's --exclude-mods/--include-mods, and applies them to dl. The list
+// only refines client-only detection, so any failure is logged and setup
+// continues without it.
+func applyExcludeList(dl *downloader.Downloader, manifest *parser.Manifest, packSlug, cacheDir string, excludeMods, includeMods []string) {
 	log := logger.Get()
 
-	source := viper.GetString("cf_exclude_include_file")
-	if source == "" {
-		return
+	list := &downloader.ExcludeList{}
+	if source := viper.GetString("cf_exclude_include_file"); source != "" {
+		loaded, err := downloader.LoadExcludeList(source, cacheDir)
+		if err != nil {
+			log.Warn().Err(err).Str("source", source).Msg("exclude list unavailable, relying on CurseForge Client/Server tags only")
+		} else {
+			list = loaded
+		}
 	}
-	list, err := downloader.LoadExcludeList(source, cacheDir)
-	if err != nil {
-		log.Warn().Err(err).Str("source", source).Msg("exclude list unavailable, relying on CurseForge Client/Server tags only")
-		return
-	}
+	list.UserExcludes = excludeMods
+	list.UserIncludes = includeMods
+
 	n, err := dl.ApplyExcludeList(list, manifest, packSlug)
 	if err != nil {
-		log.Warn().Err(err).Msg("cannot apply exclude list, relying on CurseForge Client/Server tags only")
-		return
+		log.Warn().Err(err).Msg("cannot look up mod slugs; only entries given as project IDs apply")
 	}
-	log.Info().Int("excluded", n).Str("pack", packSlug).Msg("client-only mods matched by exclude list")
+	log.Info().Int("excluded", n).Str("pack", packSlug).Msg("client-only mods matched by the exclude list and --exclude-mods")
+}
+
+func addModOverrideFlags(cmd *cobra.Command) {
+	cmd.Flags().String("exclude-mods", "", "CurseForge project slugs or IDs to leave off the server, separated by commas or spaces (config: exclude_mods)")
+	cmd.Flags().String("include-mods", "", "CurseForge project slugs or IDs to keep even if treated as client-only (config: include_mods)")
+}
+
+// modOverrides returns the --exclude-mods and --include-mods entries, falling
+// back to the exclude_mods and include_mods config keys (or MCPACKCTL_
+// environment variables).
+func modOverrides(cmd *cobra.Command) (excludes, includes []string) {
+	get := func(flag, key string) []string {
+		value, _ := cmd.Flags().GetString(flag)
+		if !cmd.Flags().Changed(flag) {
+			value = strings.Join(viper.GetStringSlice(key), " ")
+		}
+		return strings.FieldsFunc(value, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+	}
+	return get("exclude-mods", "exclude_mods"), get("include-mods", "include_mods")
 }

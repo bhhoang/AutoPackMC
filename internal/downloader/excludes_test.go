@@ -68,17 +68,78 @@ func TestExcludedSlugsAppliesPackAdjustments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	global := list.excludedSlugs("")
+	global, _ := list.resolve("")
 	if !global["ctm"] || global["modernfix"] {
 		t.Errorf("without a pack slug: ctm excluded=%v, modernfix excluded=%v", global["ctm"], global["modernfix"])
 	}
 
-	pack := list.excludedSlugs("some-pack")
-	if pack["ctm"] {
+	pack, forced := list.resolve("some-pack")
+	if pack["ctm"] || !forced["ctm"] {
 		t.Error("ctm is force-included for some-pack but was excluded")
 	}
 	if !pack["modernfix"] || !pack["mekalus-oculus-fork-with-fixed-mekanism-mekasuit"] {
 		t.Error("some-pack should exclude modernfix and the global excludes")
+	}
+}
+
+// User entries win over the list, and project IDs work like slugs.
+func TestUserOverridesTakePrecedence(t *testing.T) {
+	list, err := parseExcludeList([]byte(testExcludeList))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The list force-includes ctm for some-pack; the user excludes it.
+	// The list excludes mekalus; the user keeps it. jei is excluded by ID.
+	list.UserExcludes = []string{"ctm", "238222"}
+	list.UserIncludes = []string{"mekalus-oculus-fork-with-fixed-mekanism-mekasuit"}
+
+	srv := newExcludeTestServer(t)
+	defer srv.Close()
+	d := New(t.TempDir(), "key", 1, true)
+	d.siteAPIBase = srv.URL
+	d.officialAPIBase = srv.URL
+
+	if _, err := d.ApplyExcludeList(list, testManifest(), "some-pack"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := d.excludedSlug(267602); !ok {
+		t.Error("ctm should be excluded by the user")
+	}
+	if slug, ok := d.excludedSlug(238222); !ok || slug != "jei" {
+		t.Errorf("jei should be excluded by project ID, got %q, %v", slug, ok)
+	}
+	if _, ok := d.excludedSlug(1130957); ok || !d.forceIncluded(1130957) {
+		t.Error("mekalus should be kept by the user")
+	}
+}
+
+// A force-included mod survives a Client-only tag on CurseForge.
+func TestForceIncludeOverridesClientTag(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/mods" {
+			fmt.Fprint(w, `{"data":[{"id":1,"slug":"mistagged"}]}`)
+			return
+		}
+		fmt.Fprint(w, `{"data":{"fileName":"mistagged.jar","gameVersions":["1.20.1","Client"]}}`)
+	}))
+	defer srv.Close()
+
+	d := New(t.TempDir(), "key", 1, true)
+	d.siteAPIBase = srv.URL
+	d.officialAPIBase = srv.URL
+	manifest := &parser.Manifest{Files: []parser.ModFile{{ProjectID: 1, FileID: 2}}}
+
+	modsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(modsDir, "mistagged.jar"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list := &ExcludeList{UserIncludes: []string{"mistagged"}}
+	if _, err := d.ApplyExcludeList(list, manifest, ""); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := d.CleanMods(manifest, modsDir)
+	if err != nil || len(removed) != 0 {
+		t.Errorf("CleanMods removed %v (%v); the force-included mod must stay", removed, err)
 	}
 }
 

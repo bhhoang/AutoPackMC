@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,12 @@ type ExcludeList struct {
 	GlobalExcludes      []string                      `json:"globalExcludes"`
 	GlobalForceIncludes []string                      `json:"globalForceIncludes"`
 	Modpacks            map[string]ModpackExcludeList `json:"modpacks"`
+
+	// The user's own --exclude-mods and --include-mods: project slugs or
+	// numeric project IDs. They take precedence over the entries above, and
+	// UserIncludes also over a Client-only tag on CurseForge.
+	UserExcludes []string `json:"-"`
+	UserIncludes []string `json:"-"`
 }
 
 // ModpackExcludeList holds the adjustments for a single modpack.
@@ -41,24 +48,27 @@ type ModpackExcludeList struct {
 	ForceIncludes []string `json:"forceIncludes"`
 }
 
-// excludedSlugs returns the slugs to skip for the given modpack: global and
-// pack excludes, minus anything force-included.
-func (l *ExcludeList) excludedSlugs(packSlug string) map[string]bool {
-	excluded := make(map[string]bool)
-	for _, s := range l.GlobalExcludes {
-		excluded[s] = true
+// resolve returns, for the given modpack, the entries (slugs or project IDs)
+// to skip and the ones to keep even when tagged client-only. Precedence from
+// lowest to highest: list excludes, list force-includes, user excludes, user
+// includes.
+func (l *ExcludeList) resolve(packSlug string) (excluded, forced map[string]bool) {
+	excluded = make(map[string]bool)
+	forced = make(map[string]bool)
+	set := func(entries []string, exclude bool) {
+		for _, e := range entries {
+			excluded[e] = exclude
+			forced[e] = !exclude
+		}
 	}
 	pack := l.Modpacks[packSlug]
-	for _, s := range pack.Excludes {
-		excluded[s] = true
-	}
-	for _, s := range l.GlobalForceIncludes {
-		delete(excluded, s)
-	}
-	for _, s := range pack.ForceIncludes {
-		delete(excluded, s)
-	}
-	return excluded
+	set(l.GlobalExcludes, true)
+	set(pack.Excludes, true)
+	set(l.GlobalForceIncludes, false)
+	set(pack.ForceIncludes, false)
+	set(l.UserExcludes, true)
+	set(l.UserIncludes, false)
+	return excluded, forced
 }
 
 // LoadExcludeList reads the exclude list from source, which is an http(s) URL
@@ -117,30 +127,41 @@ func parseExcludeList(data []byte) (*ExcludeList, error) {
 
 // ApplyExcludeList marks the manifest's projects that the list excludes for
 // packSlug (which may be empty when unknown), so downloads skip them and
-// CleanMods removes them. Project slugs are looked up through the official
-// API; it returns the number of excluded projects in the manifest.
+// CleanMods removes them, and the ones it force-includes, which are kept
+// even when tagged client-only. Entries are matched by slug, looked up
+// through the official API, or by numeric project ID. It returns the number
+// of excluded projects in the manifest. If the slug lookup fails, entries
+// given as project IDs still apply and the error is returned.
 func (d *Downloader) ApplyExcludeList(list *ExcludeList, manifest *parser.Manifest, packSlug string) (int, error) {
-	excludedSlugs := list.excludedSlugs(packSlug)
+	excludedEntries, forcedEntries := list.resolve(packSlug)
 
 	ids := make([]int, 0, len(manifest.Files))
 	for _, f := range manifest.Files {
 		ids = append(ids, f.ProjectID)
 	}
-	slugs, err := d.fetchModSlugs(ids)
-	if err != nil {
-		return 0, err
-	}
+	slugs, slugErr := d.fetchModSlugs(ids)
 
 	excluded := make(map[int]string)
-	for id, slug := range slugs {
-		if excludedSlugs[slug] {
-			excluded[id] = slug
+	forced := make(map[int]bool)
+	for _, id := range ids {
+		slug := slugs[id]
+		idKey := strconv.Itoa(id)
+		switch {
+		case forcedEntries[idKey] || (slug != "" && forcedEntries[slug]):
+			forced[id] = true
+		case excludedEntries[idKey] || (slug != "" && excludedEntries[slug]):
+			name := slug
+			if name == "" {
+				name = idKey
+			}
+			excluded[id] = name
 		}
 	}
 	d.excludedMu.Lock()
 	d.excludedProjects = excluded
+	d.forcedProjects = forced
 	d.excludedMu.Unlock()
-	return len(excluded), nil
+	return len(excluded), slugErr
 }
 
 // excludedSlug returns the slug of projectID when the exclude list skips it.
@@ -149,6 +170,14 @@ func (d *Downloader) excludedSlug(projectID int) (string, bool) {
 	defer d.excludedMu.RUnlock()
 	slug, ok := d.excludedProjects[projectID]
 	return slug, ok
+}
+
+// forceIncluded reports whether projectID must be kept even when CurseForge
+// tags it client-only.
+func (d *Downloader) forceIncluded(projectID int) bool {
+	d.excludedMu.RLock()
+	defer d.excludedMu.RUnlock()
+	return d.forcedProjects[projectID]
 }
 
 func logExcludedSkip(projectID, fileID int, slug string) {
