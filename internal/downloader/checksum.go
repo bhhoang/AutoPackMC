@@ -150,3 +150,32 @@ func verifyFile(path string, size int64, sum string) error {
 	}
 	return nil
 }
+
+// metadataWorkers is the minimum concurrency for file metadata lookups,
+// which are small requests unlike the downloads bounded by Workers.
+const metadataWorkers = 8
+
+// prefetchFileInfo resolves file metadata for every manifest entry
+// concurrently, filling the cache that the sequential loops in CleanMods and
+// DownloadMissingMods read. Errors are ignored here; those loops look the
+// file up again and handle them.
+func (d *Downloader) prefetchFileInfo(manifest *parser.Manifest) {
+	workers := max(d.Workers, metadataWorkers)
+	jobs := make(chan parser.ModFile)
+	done := make(chan struct{})
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			for f := range jobs {
+				_, _ = d.fetchFileInfo(f.ProjectID, f.FileID)
+			}
+		}()
+	}
+	for _, f := range manifest.Files {
+		jobs <- f
+	}
+	close(jobs)
+	for i := 0; i < workers; i++ {
+		<-done
+	}
+}

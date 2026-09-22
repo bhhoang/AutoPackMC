@@ -521,6 +521,7 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 	}
 	d.prefetchHashes(manifest)
 
+	d.prefetchFileInfo(manifest)
 	existingFiles, err := listDirFiles(destDir)
 	if err != nil {
 		return fmt.Errorf("list existing mods: %w", err)
@@ -639,6 +640,7 @@ func (d *Downloader) DownloadMissingMods(manifest *parser.Manifest, destDir stri
 func (d *Downloader) CleanMods(manifest *parser.Manifest, modsDir string) ([]string, error) {
 	log := logger.Get()
 
+	d.prefetchFileInfo(manifest)
 	presentFiles, err := listDirFiles(modsDir)
 	if err != nil {
 		return nil, fmt.Errorf("list mods dir: %w", err)
