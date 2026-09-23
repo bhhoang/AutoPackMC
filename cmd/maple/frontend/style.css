@@ -1,6 +1,7 @@
 
 /*
-  Web glassmorphism: backdrop-filter + translucent fills + inner highlight edge.
+  Web glassmorphism: a pre-blurred landscape under translucent fills, with an
+  inner highlight edge. No backdrop-filter: see --frost-layer below.
   Radius rule: window 22px, cards 18px, controls 12px, pills/chips fully round.
   Built to be dropped into a Wails (WebView2) frameless window.
 */
@@ -64,11 +65,11 @@ button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:2.5px solid var(--focus);outline-offset:2px}
 
 /* ---------- glass primitives ---------- */
-.glass{background:var(--glass-window);-webkit-backdrop-filter:blur(28px) saturate(170%);backdrop-filter:blur(28px) saturate(170%);border:1px solid var(--glass-border);box-shadow:inset 0 1px 0 var(--glass-hi),0 30px 80px var(--shadow)}
+.glass{background:linear-gradient(var(--glass-window),var(--glass-window)),var(--frost-layer);border:1px solid var(--glass-border);box-shadow:inset 0 1px 0 var(--glass-hi),0 30px 80px var(--shadow)}
 .card{position:relative;background:var(--glass-card);border:1px solid var(--glass-border);border-radius:18px;box-shadow:inset 0 1px 0 var(--glass-hi),0 8px 24px var(--shadow);padding:20px}
 .card::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(135deg,rgba(255,255,255,.22),transparent 45%)}
 @media (prefers-reduced-transparency: reduce){
-  .glass{background:var(--solid);-webkit-backdrop-filter:none;backdrop-filter:none}
+  .glass{background:var(--solid)}
   .card{background:var(--solid)}
 }
 
@@ -377,13 +378,7 @@ button.drop:hover{border-color:var(--accent)}
 .addr .link{font-family:var(--font-body);font-size:14.5px}
 /* In the app the window fills the screen, so the panels are the glass and
    the landscape shows between them. */
-.window.glass{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
-.titlebar,.side{-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);background:var(--glass-window)}
-.card,details.adv,.tabs,.chip,.notice{-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%)}
-.card .card{-webkit-backdrop-filter:none;backdrop-filter:none}
-@media (prefers-reduced-transparency: reduce){
-  .titlebar,.side,.card,details.adv,.tabs,.chip,.notice{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--solid)}
-}
+.window.glass{background:transparent}
 
 /* Server settings tab */
 .props-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -484,11 +479,6 @@ button.drop:hover{border-color:var(--accent)}
   background:radial-gradient(380px circle at var(--mx,50%) var(--my,0%),rgb(255 255 255 / calc(.09 * var(--lit))),transparent 50%)}
 .card.lit::after{--lit:1}
 
-/* Frost: a very fine grain over the whole window, fixed so it costs nothing
-   while scrolling. */
-body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
-
 /* Liquid lens: a glass drop under the active item of a group, painted as a
    thick pane with a bright top rim and a darker lower edge. */
 .has-lens{position:relative;isolation:isolate}
@@ -506,8 +496,7 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 .has-lens > [aria-selected="true"],.has-lens > [aria-pressed="true"],.has-lens > [aria-checked="true"],.has-lens > [aria-current="true"]{
   background:transparent!important;box-shadow:none!important;border-color:transparent!important}
 @media (prefers-reduced-transparency: reduce){
-  .lens{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--glass-card)}
-  body::after{display:none}
+  .lens{background:var(--glass-card)}
 }
 
 /* Switches: the knob stretches while pressed and springs across. */
@@ -515,10 +504,9 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 .switch input:active + i::after{width:28px}
 .switch input:checked:active + i::after{transform:translateX(12px)}
 
-/* Dialogs: the backdrop frosts over while the panel grows in. */
+/* Dialogs: the page dims while the panel grows in. */
 .modal-back:not([hidden]){animation:backdrop-in calc(260ms * var(--anim)) ease-out}
-@keyframes backdrop-in{from{background:rgba(6,12,24,0);-webkit-backdrop-filter:blur(0);backdrop-filter:blur(0)}}
-.modal-back{-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+@keyframes backdrop-in{from{background:rgba(6,12,24,0)}}
 
 /* The toast rises out of the glass. */
 .toast{filter:blur(6px)}
@@ -567,7 +555,6 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 [data-effects="light"] details.adv,[data-effects="light"] .tabs,[data-effects="light"] .chip,[data-effects="light"] .modal{background:var(--solid)}
 [data-effects="light"] .mods .mod.card{background:var(--solid)}
 [data-effects="light"] .lens{background:var(--glass-card)}
-[data-effects="light"] body::after{display:none}
 
 /* The subtitle beside the app's name says what it is. */
 .titlebar .sub{font-size:12.5px;font-weight:500;color:var(--text-3);white-space:nowrap}
@@ -610,3 +597,21 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 .srv-more:focus-visible{outline:2.5px solid var(--focus);outline-offset:1px}
 /* The lens now sits under the row, so the open server itself stays clear. */
 .has-lens > .srv-row > .srv[aria-current="true"]{background:transparent!important;box-shadow:none!important;border-color:transparent!important}
+
+/* Frosted glass. The landscape behind the panels never moves, so scene.js
+   blurs it once, adds a fine grain, and sets --frost-layer to that image,
+   fixed to the window: a panel showing it under its tint looks like frosted
+   glass over the landscape. Live backdrop-filter did the same but made some
+   graphics drivers flicker. Until the image is ready the panels are solid.
+   Panels inside panels keep only their tint, as before. */
+:root{--frost-layer:linear-gradient(var(--solid),var(--solid))}
+.titlebar,.side{background:linear-gradient(var(--glass-window),var(--glass-window)),var(--frost-layer)}
+.card{background:linear-gradient(var(--glass-card),var(--glass-card)),var(--frost-layer)}
+details.adv,.tabs,.chip{background:linear-gradient(var(--glass-soft),var(--glass-soft)),var(--frost-layer)}
+.chip[aria-pressed="true"]{background:linear-gradient(var(--glass-card),var(--glass-card)),var(--frost-layer)}
+.notice{background:linear-gradient(var(--accent-soft),var(--accent-soft)),var(--frost-layer)}
+:is(.card,details.adv,.side,.titlebar,.modal,.ctx,.toast) :is(.card,.notice,.chip,.tabs,details.adv){--frost-layer:linear-gradient(transparent,transparent)}
+@media (prefers-reduced-transparency: reduce){
+  :root{--frost-layer:linear-gradient(var(--solid),var(--solid)) !important}
+  .titlebar,.side,.card,details.adv,.tabs,.chip,.notice{background:var(--solid)}
+}
