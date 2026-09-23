@@ -594,3 +594,17 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 .ctx .danger,.ctx .danger .ms{color:var(--danger)}
 .ctx .sep{height:1px;margin:4px 8px;background:var(--glass-border)}
 #renDlg .field{display:flex;flex-direction:column;gap:6px}
+
+/* A server row: the server, and a ⋯ button that opens its menu. It shows on
+   hover or keyboard focus, and always on the open server. */
+.srv-row{position:relative}
+.srv-row .srv{padding-right:40px}
+.srv-more{position:absolute;right:6px;top:50%;width:30px;height:30px;margin-top:-15px;display:grid;place-items:center;border:0;border-radius:9px;
+  background:transparent;color:var(--text-2);cursor:pointer;opacity:0;transition:opacity calc(160ms * var(--anim)),background calc(160ms * var(--anim))}
+.srv-more .ms{font-size:20px}
+.srv-row:hover .srv-more,.srv-row:focus-within .srv-more,.srv-more[aria-expanded="true"],
+.srv-row .srv[aria-current="true"] + .srv-more{opacity:1}
+.srv-more:hover,.srv-more[aria-expanded="true"]{background:var(--glass-soft);color:var(--text)}
+.srv-more:focus-visible{outline:2.5px solid var(--focus);outline-offset:1px}
+/* The lens now sits under the row, so the open server itself stays clear. */
+.has-lens > .srv-row > .srv[aria-current="true"]{background:transparent!important;box-shadow:none!important;border-color:transparent!important}

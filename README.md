@@ -37,7 +37,7 @@
 - **Server picture** — choose a picture (PNG, JPEG, GIF, WebP, BMP or TIFF) or use the modpack's logo; it is cropped and shrunk to the 64 × 64 `server-icon.png` shown in the Multiplayer list.
 - **Server messages** — the live console, with a box to type commands.
 - **Open folder** — opens the server's folder in File Explorer.
-- **Right-click a server** in the list (or press the menu key) for quick actions: start or stop it, open its folder or settings, rename it, move it to another folder, or remove it. A new name is kept when the pack updates; moving works across drives and keeps the server's settings and Java.
+- **Right-click a server** in the list, or use its **⋯** button, for quick actions: start or stop it, open its folder or settings, rename it, move it to another folder, or remove it. A new name is kept when the pack updates; moving works across drives and keeps the server's settings and Java.
 - **Remove a server** — at the bottom of **Server settings**. It takes the server off the list and, if you tick the box, moves its folder to the Recycle Bin, so it can still be restored. Stop the server first. A folder that holds anything besides this server, such as another server or the folder new servers go into, is never moved.
 - **Updates** — Maple checks GitHub for a new version when it starts (this can be turned off in Settings), downloads it, checks it against `SHA256SUMS.txt`, and restarts into it.
 - **Look** — frosted glass with gentle motion. Settings has the animation length (Off, 0.5× to 4×, or Auto, which follows Windows) and **Glass effects**: Auto, Full, or Light, which uses solid panels for PCs that draw slowly. In Auto the app switches to Light by itself when Windows draws it without the graphics card or it cannot keep up.

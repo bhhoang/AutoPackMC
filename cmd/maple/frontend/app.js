@@ -128,7 +128,7 @@
   }
 
   function renderSidebar(){
-    const list = $('#srvList'); list.querySelectorAll('.srv').forEach(n => n.remove());
+    const list = $('#srvList'); list.querySelectorAll('.srv-row').forEach(n => n.remove());
     for (const s of S.servers.values()){
       const b = document.createElement('button'); b.type = 'button'; b.className = 'srv';
       b.setAttribute('aria-current', S.view === 'server' && s.id === S.current ? 'true' : 'false');
@@ -147,7 +147,21 @@
         const r = b.getBoundingClientRect();
         openMenu(s.id, r.left + 24, r.bottom - 6, b);
       };
-      list.appendChild(b);
+      // The ⋯ button opens the same menu, for anyone who doesn't right-click.
+      const more = document.createElement('button');
+      more.type = 'button'; more.className = 'srv-more';
+      more.setAttribute('aria-label', t('moreActions', {name: s.name}));
+      more.setAttribute('aria-haspopup', 'menu'); more.setAttribute('aria-expanded', 'false');
+      more.title = t('moreActionsTip');
+      more.innerHTML = '<span class="ms">more_horiz</span>';
+      more.onclick = () => {
+        if (menuClosedBy === more){ menuClosedBy = null; return; } // this click closed it
+        const r = more.getBoundingClientRect();
+        openMenu(s.id, r.right, r.bottom + 4, more, true);
+      };
+      const row = document.createElement('div'); row.className = 'srv-row';
+      row.append(b, more);
+      list.appendChild(row);
     }
     $('#settingsBtn').setAttribute('aria-current', S.view === 'settings');
   }
@@ -1173,7 +1187,7 @@
   // Right-click a server in the list (or press the menu key) for its
   // actions. Items that need a stopped server are greyed out while it runs.
   const menu = $('#ctxMenu');
-  let menuFor = null, menuReturn = null;
+  let menuFor = null, menuReturn = null, menuClosedBy = null;
 
   function menuItems(s){
     const busy = s.state === 'running' || s.state === 'starting' || S.stopping.has(s.id);
@@ -1191,9 +1205,12 @@
     ];
   }
 
-  function openMenu(id, x, y, from){
+  // x, y is the menu's top-left corner, or its top-right with alignRight.
+  function openMenu(id, x, y, from, alignRight = false){
     const s = S.servers.get(id); if (!s) return;
+    closeMenu(false);
     menuFor = id; menuReturn = from;
+    if (from && from.hasAttribute('aria-expanded')) from.setAttribute('aria-expanded', 'true');
     menu.setAttribute('aria-label', t('menuLabel', {name: s.name}));
     menu.innerHTML = '';
     const items = menuItems(s);
@@ -1211,10 +1228,11 @@
     menu.hidden = false;
     // Keep it on screen: open up or left when there is no room.
     const w = menu.offsetWidth, h = menu.offsetHeight, pad = 8;
+    if (alignRight) x -= w;
     const left = Math.min(x, innerWidth - w - pad), top = y + h + pad > innerHeight ? Math.max(pad, y - h) : y;
     menu.style.left = Math.max(pad, left) + 'px';
     menu.style.top = top + 'px';
-    menu.style.transformOrigin = `${x - left}px ${y >= top ? 0 : h}px`;
+    menu.style.transformOrigin = `${alignRight ? w : x - left}px ${y >= top ? 0 : h}px`;
     if (Motion.scale()) menu.animate([{opacity: 0, transform: 'scale(.94)'}, {opacity: 1, transform: 'none'}],
       {duration: Motion.ms(170), easing: 'cubic-bezier(.2,1.2,.4,1)'});
     const first = menu.querySelector('[role=menuitem]:not(:disabled)');
@@ -1224,6 +1242,7 @@
   function closeMenu(restoreFocus = true){
     if (menu.hidden) return;
     menu.hidden = true; menuFor = null;
+    if (menuReturn && menuReturn.hasAttribute('aria-expanded')) menuReturn.setAttribute('aria-expanded', 'false');
     if (restoreFocus && menuReturn && document.contains(menuReturn)) menuReturn.focus();
     menuReturn = null;
   }
@@ -1239,8 +1258,14 @@
     else if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); closeMenu(); }
     else if (e.key === 'Tab'){ e.preventDefault(); closeMenu(); }
   });
-  document.addEventListener('pointerdown', e => { if (!menu.hidden && !menu.contains(e.target)) closeMenu(false); }, true);
-  document.addEventListener('contextmenu', e => { if (!menu.hidden && !e.target.closest('.srv')) closeMenu(false); });
+  document.addEventListener('pointerdown', e => {
+    if (menu.hidden || menu.contains(e.target)) return;
+    // A press on the ⋯ button that opened the menu closes it; its click
+    // must not open it again.
+    menuClosedBy = menuReturn && menuReturn.contains(e.target) && menuReturn.classList.contains('srv-more') ? menuReturn : null;
+    closeMenu(false);
+  }, true);
+  document.addEventListener('contextmenu', e => { if (!menu.hidden && !e.target.closest('.srv-row')) closeMenu(false); });
   addEventListener('blur', () => closeMenu(false));
   addEventListener('resize', () => closeMenu(false));
   $('#srvList').addEventListener('scroll', () => closeMenu(false), {passive: true});
@@ -1311,7 +1336,7 @@
     home(); setTab('overview'); syncMax();
     const pressed = b => b.getAttribute('aria-pressed') === 'true';
     Motion.attach($('.tabs'), '[role=tab]', b => b.getAttribute('aria-selected') === 'true');
-    Motion.attach($('#srvList'), '.srv', b => b.getAttribute('aria-current') === 'true');
+    Motion.attach($('#srvList'), '.srv-row', r => r.querySelector('.srv').getAttribute('aria-current') === 'true');
     Motion.attach($('.lang-seg'), 'button', pressed);
     Motion.attach($('#p-mods .chips'), '.chip', pressed);
     $$('#v-settings .theme-seg').forEach(g => { g.classList.add('lens-accent'); Motion.attach(g, 'button', pressed); });
