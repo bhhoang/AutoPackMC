@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/bhhoang/AutoPackMC/internal/resolver"
+	"github.com/bhhoang/AutoPackMC/pkg/logger"
 )
 
 // disabledSuffix marks a jar the user turned off. The loaders only load
@@ -25,6 +26,9 @@ type ModView struct {
 	State     string `json:"state"`  // on, off or mine
 	Reason    string `json:"reason"` // why it is off: client, list or you
 	ProjectID int    `json:"projectId"`
+	// NeededBy names the added mods that need this one, for a mod that was
+	// only added as their dependency.
+	NeededBy []string `json:"neededBy,omitempty"`
 }
 
 // Mods lists a server's mods: those on the server, those the user added,
@@ -41,8 +45,12 @@ func (s *Service) Mods(id string) ([]ModView, error) {
 	}
 
 	added := map[string]Added{}
+	names := map[int]string{}
 	for _, a := range rec.Added {
 		added[strings.ToLower(a.FileName)] = a
+		if a.ProjectID != 0 {
+			names[a.ProjectID] = displayName(a.Name, a.FileName)
+		}
 	}
 	present := map[string]bool{}
 	var out []ModView
@@ -54,7 +62,16 @@ func (s *Service) Mods(id string) ([]ModView, error) {
 		case strings.HasSuffix(lower, ".jar"):
 			present[lower] = true
 			if a, ok := added[lower]; ok {
-				out = append(out, ModView{FileName: name, Name: displayName(a.Name, name), State: "mine", ProjectID: a.ProjectID})
+				v := ModView{FileName: name, Name: displayName(a.Name, name), State: "mine", ProjectID: a.ProjectID}
+				if a.AsDependency {
+					v.Reason = "dep"
+					for _, p := range a.NeededBy {
+						if n, ok := names[p]; ok {
+							v.NeededBy = append(v.NeededBy, n)
+						}
+					}
+				}
+				out = append(out, v)
 			} else {
 				out = append(out, ModView{FileName: name, Name: modName(name), State: "on"})
 			}
@@ -130,7 +147,7 @@ func (s *Service) SetModOn(id, fileName string) error {
 		if m.ProjectID == 0 || m.FileID == 0 {
 			return &Error{Code: "cannot_restore"}
 		}
-		if err := s.downloaderFor().DownloadOne(m.ProjectID, m.FileID, modsDir); err != nil {
+		if err := s.downloadMod(m.ProjectID, m.FileID, modsDir); err != nil {
 			return userError(err)
 		}
 		keep := m.Slug
@@ -152,31 +169,73 @@ func (s *Service) SetModOn(id, fileName string) error {
 	return &Error{Code: "no_mod"}
 }
 
-// RemoveMod deletes a mod the user added.
-func (s *Service) RemoveMod(id, fileName string) error {
+// RemoveMod deletes a mod the user added, with the mods it was the last to
+// need. It returns the names of those dependencies.
+func (s *Service) RemoveMod(id, fileName string) ([]string, error) {
 	rec, ok := s.store.Server(id)
 	if !ok {
-		return &Error{Code: "no_server"}
+		return nil, &Error{Code: "no_server"}
 	}
 	if s.isRunning(id) {
-		return &Error{Code: "stop_first"}
+		return nil, &Error{Code: "stop_first"}
 	}
 	if err := checkModFileName(fileName); err != nil {
-		return err
+		return nil, err
 	}
-	if err := os.Remove(filepath.Join(rec.Dir, "mods", fileName)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return userError(err)
+	modsDir := filepath.Join(rec.Dir, "mods")
+	if err := os.Remove(filepath.Join(modsDir, fileName)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, userError(err)
 	}
+	var gone []Added // dependencies to delete as well
 	_, err := s.store.UpdateServer(id, func(r *ServerRecord) {
-		kept := r.Added[:0]
-		for _, a := range r.Added {
-			if !strings.EqualFold(a.FileName, fileName) {
-				kept = append(kept, a)
-			}
-		}
-		r.Added = kept
+		r.Added, gone = removeWithDependencies(r.Added, fileName)
 	})
-	return err
+	removed := []string{}
+	for _, d := range gone {
+		if checkModFileName(d.FileName) != nil {
+			continue
+		}
+		if rmErr := os.Remove(filepath.Join(modsDir, d.FileName)); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			logger.Get().Warn().Err(rmErr).Str("file", d.FileName).Msg("cannot remove a dependency nothing needs any more")
+			continue
+		}
+		removed = append(removed, displayName(d.Name, d.FileName))
+	}
+	return removed, err
+}
+
+// removeWithDependencies drops the added mod stored as fileName, then every
+// mod added only as a dependency that nothing still needs. It returns the
+// kept list and the dependencies it dropped.
+func removeWithDependencies(list []Added, fileName string) (kept, gone []Added) {
+	var queue []int
+	for _, a := range list {
+		if strings.EqualFold(a.FileName, fileName) {
+			if a.ProjectID != 0 {
+				queue = append(queue, a.ProjectID)
+			}
+			continue
+		}
+		kept = append(kept, a)
+	}
+	for len(queue) > 0 {
+		pid := queue[0]
+		queue = queue[1:]
+		next := kept[:0]
+		for _, a := range kept {
+			a.NeededBy = removeInt(a.NeededBy, pid)
+			if a.AsDependency && len(a.NeededBy) == 0 {
+				gone = append(gone, a)
+				if a.ProjectID != 0 {
+					queue = append(queue, a.ProjectID)
+				}
+				continue
+			}
+			next = append(next, a)
+		}
+		kept = next
+	}
+	return kept, gone
 }
 
 // ModResult is a CurseForge mod offered on the Add mods panel.
@@ -192,7 +251,7 @@ func (s *Service) SearchMods(id, query string) ([]ModResult, error) {
 	if !ok {
 		return nil, &Error{Code: "no_server"}
 	}
-	found, err := resolver.New(s.apiKey()).SearchMods(strings.TrimSpace(query), rec.MC, rec.Loader, 20)
+	found, err := s.resolver().SearchMods(strings.TrimSpace(query), rec.MC, rec.Loader, 20)
 	if err != nil {
 		return nil, userError(err)
 	}
@@ -212,7 +271,7 @@ func (s *Service) ModFromLink(id, link string) (*ModResult, error) {
 	if !resolver.IsCurseForgeModURL(strings.TrimSpace(link)) {
 		return nil, &Error{Code: "bad_mod_link"}
 	}
-	res := resolver.New(s.apiKey())
+	res := s.resolver()
 	p, err := res.ModFromURL(strings.TrimSpace(link))
 	if err != nil {
 		return nil, userError(err)
@@ -230,22 +289,54 @@ func (s *Service) ModFromLink(id, link string) (*ModResult, error) {
 
 // AddResult says what AddMod did.
 type AddResult struct {
-	Status   string `json:"status"` // added, client_only, no_version or already
-	Name     string `json:"name"`
-	FileName string `json:"fileName"`
+	// Status is added, client_only, no_version, dep_missing or already.
+	Status   string   `json:"status"`
+	Name     string   `json:"name"`
+	FileName string   `json:"fileName"`
+	Deps     []string `json:"deps"`              // dependencies added with the mod
+	Missing  string   `json:"missing,omitempty"` // for dep_missing: the dependency with no suitable version
+}
+
+// maxDependencies stops a runaway chain of dependencies.
+const maxDependencies = 40
+
+// plannedMod is a mod AddMod is about to download.
+type plannedMod struct {
+	id       int
+	name     string
+	file     *resolver.ModFile
+	neededBy []int
 }
 
 // AddMod downloads the file of a CurseForge mod made for this server into
-// mods/. A client-only mod is only added when force is set.
+// mods/, together with the mods it requires (and the mods those require)
+// that are not on the server yet. Nothing is added when one of them has no
+// file for this server's Minecraft version and loader. A client-only mod is
+// only added when force is set.
 func (s *Service) AddMod(id string, projectID int, name string, force bool) (*AddResult, error) {
 	rec, ok := s.store.Server(id)
 	if !ok {
 		return nil, &Error{Code: "no_server"}
 	}
+	for _, a := range rec.Added {
+		if a.ProjectID == projectID && a.AsDependency {
+			// Asked for by name now, so it stays when its dependents go.
+			_, err := s.store.UpdateServer(id, func(r *ServerRecord) {
+				for i := range r.Added {
+					if r.Added[i].ProjectID == projectID {
+						r.Added[i].AsDependency = false
+					}
+				}
+			})
+			return &AddResult{Status: "already", Name: name}, err
+		}
+	}
 	if onServer(rec, projectID) {
 		return &AddResult{Status: "already", Name: name}, nil
 	}
-	file, err := resolver.New(s.apiKey()).ModFileFor(projectID, rec.MC, rec.Loader)
+
+	res := s.resolver()
+	file, err := res.ModFileFor(projectID, rec.MC, rec.Loader)
 	if errors.Is(err, resolver.ErrNoCompatibleFile) {
 		return &AddResult{Status: "no_version", Name: name}, nil
 	}
@@ -255,17 +346,93 @@ func (s *Service) AddMod(id string, projectID int, name string, force bool) (*Ad
 	if file.ClientOnly() && !force {
 		return &AddResult{Status: "client_only", Name: name, FileName: file.FileName}, nil
 	}
-	modsDir := filepath.Join(rec.Dir, "mods")
-	if err := s.downloaderFor().DownloadOne(projectID, file.ID, modsDir); err != nil {
-		return nil, userError(err)
+
+	// Work out every required mod first, so nothing is downloaded when one
+	// of them is missing.
+	plan := []*plannedMod{{id: projectID, name: name, file: file}}
+	seen := map[int]*plannedMod{projectID: plan[0]}
+	moreNeeds := map[int][]int{} // mods added before that the new ones also need
+	for i := 0; i < len(plan); i++ {
+		for _, dep := range plan[i].file.RequiredMods() {
+			if p, ok := seen[dep]; ok {
+				p.neededBy = appendUniqueInt(p.neededBy, plan[i].id)
+				continue
+			}
+			if onServer(rec, dep) {
+				moreNeeds[dep] = appendUniqueInt(moreNeeds[dep], plan[i].id)
+				continue
+			}
+			if len(plan) > maxDependencies {
+				return nil, &Error{Code: "too_many_deps", Detail: name}
+			}
+			depName := fmt.Sprintf("mod %d", dep)
+			if p, err := res.Mod(dep); err == nil && p.Name != "" {
+				depName = p.Name
+			}
+			depFile, err := res.ModFileFor(dep, rec.MC, rec.Loader)
+			if errors.Is(err, resolver.ErrNoCompatibleFile) {
+				return &AddResult{Status: "dep_missing", Name: name, Missing: depName}, nil
+			}
+			if err != nil {
+				return nil, userError(err)
+			}
+			p := &plannedMod{id: dep, name: depName, file: depFile, neededBy: []int{plan[i].id}}
+			seen[dep] = p
+			plan = append(plan, p)
+		}
 	}
+
+	modsDir := filepath.Join(rec.Dir, "mods")
+	for i, p := range plan {
+		if err := s.downloadMod(p.id, p.file.ID, modsDir); err != nil {
+			for _, done := range plan[:i] { // leave no half-added mod behind
+				if checkModFileName(done.file.FileName) == nil {
+					_ = os.Remove(filepath.Join(modsDir, done.file.FileName))
+				}
+			}
+			return nil, userError(err)
+		}
+	}
+
+	result := &AddResult{Status: "added", Name: name, FileName: file.FileName, Deps: []string{}}
 	_, err = s.store.UpdateServer(id, func(r *ServerRecord) {
-		r.Added = append(r.Added, Added{ProjectID: projectID, FileID: file.ID, Name: name, FileName: file.FileName})
+		for i := range r.Added {
+			for _, by := range moreNeeds[r.Added[i].ProjectID] {
+				r.Added[i].NeededBy = appendUniqueInt(r.Added[i].NeededBy, by)
+			}
+		}
+		for i, p := range plan {
+			a := Added{ProjectID: p.id, FileID: p.file.ID, Name: p.name, FileName: p.file.FileName}
+			if i > 0 {
+				a.AsDependency, a.NeededBy = true, p.neededBy
+				result.Deps = append(result.Deps, p.name)
+			}
+			r.Added = append(r.Added, a)
+		}
 	})
 	if err != nil {
 		return nil, userError(err)
 	}
-	return &AddResult{Status: "added", Name: name, FileName: file.FileName}, nil
+	return result, nil
+}
+
+func appendUniqueInt(list []int, v int) []int {
+	for _, x := range list {
+		if x == v {
+			return list
+		}
+	}
+	return append(list, v)
+}
+
+func removeInt(list []int, v int) []int {
+	out := list[:0]
+	for _, x := range list {
+		if x != v {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 // AddJarFiles copies .jar files the user chose into mods/ and returns the

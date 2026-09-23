@@ -49,6 +49,7 @@ type Config struct {
 	UpdateRepo        string // GitHub owner/name whose releases hold new versions
 	UpdateAPI         string // GitHub API base; empty means api.github.com (set in tests)
 	ExePath           string // the running executable; empty means os.Executable (set in tests)
+	CurseForgeAPI     string // CurseForge API base; empty means the real one (set in tests)
 }
 
 // Service is bound to the window; each exported method can be called from
@@ -63,6 +64,9 @@ type Service struct {
 	setupDone   chan struct{}      // closed when the running setup has finished
 
 	update updater
+
+	// downloadMod fetches one CurseForge file into dir; tests replace it.
+	downloadMod func(projectID, fileID int, dir string) error
 
 	serversMu sync.Mutex
 	running   map[string]*running // by server ID, while running
@@ -80,14 +84,18 @@ func New(cfg Config, ui UI) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{
+	s := &Service{
 		cfg:     cfg,
 		ui:      ui,
 		store:   st,
 		running: map[string]*running{},
 		logs:    map[string]*logRing{},
 		states:  map[string]*stateView{},
-	}, nil
+	}
+	s.downloadMod = func(projectID, fileID int, dir string) error {
+		return s.downloaderFor().DownloadOne(projectID, fileID, dir)
+	}
+	return s, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +210,7 @@ func (s *Service) LookupPack(input string) (*PackPreview, error) {
 	input = strings.TrimSpace(input)
 	switch {
 	case resolver.IsCurseForgeURL(input):
-		p, err := resolver.New(s.apiKey()).PackFromURL(input)
+		p, err := s.resolver().PackFromURL(input)
 		if err != nil {
 			return nil, userError(err)
 		}
@@ -421,7 +429,7 @@ func (s *Service) runSetup(ctx context.Context, req SetupRequest) {
 	}
 	var logo string
 	if resolver.IsCurseForgeURL(opts.Input) {
-		if p, err := resolver.New(s.apiKey()).PackFromURL(opts.Input); err == nil {
+		if p, err := s.resolver().PackFromURL(opts.Input); err == nil {
 			logo = p.LogoURL
 		}
 	}
@@ -582,6 +590,15 @@ func safeFolderName(name string) string {
 		return "Minecraft server"
 	}
 	return name
+}
+
+// resolver returns a CurseForge client using the configured key.
+func (s *Service) resolver() *resolver.Resolver {
+	r := resolver.New(s.apiKey())
+	if s.cfg.CurseForgeAPI != "" {
+		r.WithBaseURL(s.cfg.CurseForgeAPI)
+	}
+	return r
 }
 
 // downloaderFor returns a downloader for adding single mods.

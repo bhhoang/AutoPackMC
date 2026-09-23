@@ -53,12 +53,17 @@ type LeftOff struct {
 	ByList    bool   `json:"byList"`
 }
 
-// Added is a mod the user put on a server.
+// Added is a mod the user put on a server, or one such a mod needed.
 type Added struct {
 	ProjectID int    `json:"projectId"` // 0 for a .jar the user chose
 	FileID    int    `json:"fileId"`
 	Name      string `json:"name"`
 	FileName  string `json:"fileName"`
+	// AsDependency is set when the mod was only added because other added
+	// mods need it; NeededBy lists their project IDs. Such a mod is removed
+	// with the last mod that needs it.
+	AsDependency bool  `json:"asDependency,omitempty"`
+	NeededBy     []int `json:"neededBy,omitempty"`
 }
 
 // clone returns a copy that shares no slices with r, so callers can read it
@@ -67,6 +72,9 @@ func (r ServerRecord) clone() ServerRecord {
 	r.ProjectIDs = append([]int(nil), r.ProjectIDs...)
 	r.LeftOff = append([]LeftOff(nil), r.LeftOff...)
 	r.Added = append([]Added(nil), r.Added...)
+	for i := range r.Added {
+		r.Added[i].NeededBy = append([]int(nil), r.Added[i].NeededBy...)
+	}
 	r.Include = append([]string(nil), r.Include...)
 	r.Exclude = append([]string(nil), r.Exclude...)
 	return r

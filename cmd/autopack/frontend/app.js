@@ -295,18 +295,26 @@
     }
     const why = {client: 'whyClient', list: 'whyList', you: 'whyYou'};
     box.innerHTML = list.map((m, i) => {
-      const status = m.state === 'mine' ? `<div class="why mine">${esc(t('addedByYou'))}</div>`
+      // A mod added only because another added mod needs it goes away with
+      // that mod, so it has no button of its own.
+      const dep = m.state === 'mine' && m.reason === 'dep';
+      const status = dep ? `<div class="why mine">${esc(t('neededBy', {names: (m.neededBy || []).join(', ')}))}</div>`
+        : m.state === 'mine' ? `<div class="why mine">${esc(t('addedByYou'))}</div>`
         : `<div class="why ${m.state === 'on' ? 'on' : 'off'}">${esc(m.state === 'on' ? t('onServer') : t('leftOffWhy', {why: t(why[m.reason] || 'whyYou')}))}</div>`;
       const label = t(m.state === 'mine' ? 'remove' : m.state === 'on' ? 'leaveOff' : 'keepAnyway');
+      const action = dep ? '<span></span>' : `<button class="btn sm" type="button" data-mod="${i}">${esc(label)}</button>`;
       return `<div class="card mod${m.state === 'off' ? ' removed' : ''}">${tileHTML(m.name)}
         <div><b>${esc(m.name)}</b><div class="f" title="${esc(m.fileName)}">${esc(m.fileName)}</div>${status}</div>
-        <button class="btn sm" type="button" data-mod="${i}">${esc(label)}</button></div>`;
+        ${action}</div>`;
     }).join('');
     $$('[data-mod]', box).forEach(b => b.onclick = async () => {
       const m = list[+b.dataset.mod], id = S.current;
       b.disabled = true;
       try {
-        if (m.state === 'mine'){ await api().RemoveMod(id, m.fileName); toast(t('toastRemoved', {name: m.name})); }
+        if (m.state === 'mine'){
+          const deps = await api().RemoveMod(id, m.fileName);
+          toast(deps && deps.length ? t('toastRemovedDeps', {name: m.name, deps: deps.join(', ')}) : t('toastRemoved', {name: m.name}));
+        }
         else if (m.state === 'on'){ await api().SetModOff(id, m.fileName); toast(t('toastWillBeOff', {name: m.name})); }
         else { b.textContent = t('adding'); await api().SetModOn(id, m.fileName); toast(t('toastWillBeOn', {name: m.name})); }
         modsChanged();
@@ -394,7 +402,8 @@
       const r = await api().AddMod(s.id, id, name, force);
       if (r.status === 'added' || r.status === 'already'){
         b.outerHTML = `<span class="state"><span class="ms">check_circle</span>${esc(t(r.status === 'added' ? 'added' : 'onServer'))}</span>`;
-        toast(t(r.status === 'added' ? 'toastAdded' : 'toastAlready', {name}));
+        toast(r.status === 'already' ? t('toastAlready', {name})
+          : r.deps && r.deps.length ? t('toastAddedDeps', {name, deps: r.deps.join(', ')}) : t('toastAdded', {name}));
         modsChanged(); loadMods();
       } else if (r.status === 'client_only'){
         b.disabled = false; b.dataset.force = '1'; b.textContent = t('addAnyway');
@@ -403,8 +412,15 @@
       } else if (r.status === 'no_version'){
         b.disabled = false; b.textContent = label;
         toast(t('err_no_version', {name, ...packVars(s)}), true);
+      } else if (r.status === 'dep_missing'){
+        b.disabled = false; b.textContent = label;
+        toast(t('depMissing', {name, dep: r.missing, ...packVars(s)}), true);
       }
-    } catch (err){ b.disabled = false; b.textContent = label; toastErr(err); }
+    } catch (err){
+      b.disabled = false; b.textContent = label;
+      const e = parseErr(err);
+      toast(errText(e, {name: e.detail || name}), true);
+    }
   });
 
   async function addJars(paths){

@@ -106,3 +106,29 @@ func TestModFileClientOnly(t *testing.T) {
 		t.Error("Client+Server file treated as client-only")
 	}
 }
+
+func TestModFileRequiredModsAndMod(t *testing.T) {
+	r := testResolver(t, func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/mods/9/files":
+			fmt.Fprint(w, `{"data":[{"id":1,"fileName":"infinitetrading-1.20.1-5.0.jar","gameVersions":["1.20.1","Forge"],
+				"releaseType":1,"isAvailable":true,"fileDate":"2024-01-01",
+				"dependencies":[{"modId":342584,"relationType":3},{"modId":7,"relationType":2}]}]}`)
+		case "/mods/342584":
+			fmt.Fprint(w, `{"data":{"id":342584,"slug":"collective","name":"Collective"}}`)
+		default:
+			http.NotFound(w, req)
+		}
+	})
+	f, err := r.ModFileFor(9, "1.20.1", "forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.RequiredMods(); len(got) != 1 || got[0] != 342584 {
+		t.Errorf("RequiredMods = %v, want [342584] (optional dependency skipped)", got)
+	}
+	p, err := r.Mod(342584)
+	if err != nil || p.Name != "Collective" {
+		t.Errorf("Mod = %+v, %v", p, err)
+	}
+}
