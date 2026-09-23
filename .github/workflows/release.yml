@@ -304,14 +304,6 @@ jobs:
         with:
           name: windows-release
           path: dist
-      - name: Copy for AutoPack's updater
-        working-directory: dist
-        env:
-          TAG: ${{ needs.version.outputs.tag }}
-        # The app was called AutoPack up to v0.2.0, and those copies update
-        # to the file named AutoPack-<tag>-windows-amd64.exe. The same
-        # Maple program under that name lets them update into Maple.
-        run: cp "Maple-$TAG-windows-amd64.exe" "AutoPack-$TAG-windows-amd64.exe"
       - name: Checksums
         working-directory: dist
         run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
@@ -331,7 +323,6 @@ jobs:
           ## Downloads
 
           - **Maple-$TAG-windows-amd64.exe**: the desktop app for Windows 10 and 11. Download it and double-click it; nothing needs installing.
-          - **AutoPack-$TAG-windows-amd64.exe**: the same app under its old name, so AutoPack v0.2.0 and older can update to it. New downloads should use the Maple file.
           - **mcpackctl-$TAG-&lt;os&gt;-&lt;arch&gt;**: the command-line tool for Windows, Linux and macOS.
           - **SHA256SUMS.txt**: checksums to verify the downloads.
 

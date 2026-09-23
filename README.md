@@ -304,7 +304,7 @@ mcpackctl setup --input pack.zip --output ./server
 
 The desktop app was called AutoPack up to v0.2.0. From the next version it is Maple:
 
-- AutoPack's **Update** button installs Maple like any other update. Releases also carry the app as `AutoPack-<version>-windows-amd64.exe` for this.
+- AutoPack's **Update** button does not find Maple. To switch, download `Maple-<version>-windows-amd64.exe` from the [Releases page](https://github.com/bhhoang/Maple/releases/latest), run it, and delete the old AutoPack file.
 - On its first start Maple moves the settings and server list from `%APPDATA%\AutoPack` to `%APPDATA%\Maple`. Servers themselves stay where they are.
 - The command-line tool is still called `mcpackctl`.
 
