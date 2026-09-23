@@ -8,6 +8,15 @@
 #   feat!: ... / BREAKING CHANGE -> major (v0.1.0 -> v1.0.0)
 # Put [skip release] in the head commit message to push to main without
 # releasing.
+#
+# The Windows programs are signed through SignPath (free code signing for
+# open-source projects, certificate by SignPath Foundation) once these are
+# set in the repository settings. Until then releases are published
+# unsigned. See "Code signing" in the README.
+#   secret   SIGNPATH_API_TOKEN
+#   variable SIGNPATH_ORGANIZATION_ID
+#   variable SIGNPATH_PROJECT_SLUG           (default: AutoPackMC)
+#   variable SIGNPATH_SIGNING_POLICY_SLUG    (default: release-signing)
 name: Build and release
 
 on:
@@ -143,6 +152,16 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Add the version details
+        if: matrix.goos == 'windows'
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest cli \
+            --product-name mcpackctl --file-description mcpackctl \
+            --product-version "${TAG#v}" --file-version "${TAG#v}" \
+            --copyright "Copyright (c) bhhoang. MIT License." \
+            --original-filename mcpackctl.exe --out cmd/mcpackctl/rsrc
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
@@ -172,6 +191,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Add the icon and version details
+        shell: bash
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          # Windows shows these in the file's properties and in its own
+          # prompts; the manifest is the usual one for a desktop app.
+          go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest gui \
+            --icon cmd/autopack/build/appicon.png \
+            --product-name AutoPack --file-description AutoPack \
+            --product-version "${TAG#v}" --file-version "${TAG#v}" \
+            --copyright "Copyright (c) bhhoang. MIT License." \
+            --original-filename AutoPack.exe --out cmd/autopack/rsrc
       - name: Build
         shell: bash
         env:
@@ -187,17 +219,91 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  sign:
+    name: Sign the Windows programs
+    needs: [version, cli, gui]
+    runs-on: ubuntu-latest
+    # A release signing request waits for an approver to approve it in
+    # SignPath; the job waits up to five hours for that.
+    timeout-minutes: 320
+    permissions:
+      actions: read
+      contents: read
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+    outputs:
+      signed: ${{ steps.setup.outputs.enabled }}
+    steps:
+      - name: Check that signing is set up
+        id: setup
+        run: |
+          if [ -n "$SIGNPATH_API_TOKEN" ] && [ -n "$SIGNPATH_ORGANIZATION_ID" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::SignPath is not set up, so the Windows programs are released unsigned. See Code signing in the README."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: gui-windows-amd64
+          path: unsigned
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-windows-amd64
+          path: unsigned
+      - name: Upload the programs to sign
+        id: unsigned
+        if: steps.setup.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unsigned
+          path: unsigned/*
+          if-no-files-found: error
+      - name: Sign with SignPath
+        if: steps.setup.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'AutoPackMC' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 18000
+          output-artifact-directory: signed
+      - name: Use the unsigned programs
+        if: steps.setup.outputs.enabled != 'true'
+        run: mkdir -p signed && cp unsigned/* signed/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: signed/*
+          if-no-files-found: error
+
   release:
     name: Publish release
-    needs: [version, cli, gui]
+    needs: [version, cli, sign]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      # Everything except the unsigned Windows builds, which the sign job
+      # replaced.
       - uses: actions/download-artifact@v4
         with:
+          pattern: cli-linux-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-darwin-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: dist
       - name: Checksums
         working-directory: dist
         run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
@@ -206,14 +312,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.version.outputs.tag }}
+          SIGNED: ${{ needs.sign.outputs.signed }}
         run: |
+          if [ "$SIGNED" = "true" ]; then
+            windows='The Windows programs are signed; the publisher Windows shows is **SignPath Foundation**. A brand-new version can still get a "Windows protected your PC" message for a few days until Windows knows the download: choose **More info**, then **Run anyway**.'
+          else
+            windows='This release is not signed, so Windows may show "Windows protected your PC": choose **More info**, then **Run anyway**.'
+          fi
           cat > notes.md <<EOF
           ## Downloads
 
-          - **AutoPack-$TAG-windows-amd64.exe**: the desktop app for Windows 10 and 11. Download it and double-click it; nothing needs installing. Windows may show "Windows protected your PC" because the app is not signed yet: choose **More info**, then **Run anyway**.
+          - **AutoPack-$TAG-windows-amd64.exe**: the desktop app for Windows 10 and 11. Download it and double-click it; nothing needs installing.
           - **mcpackctl-$TAG-&lt;os&gt;-&lt;arch&gt;**: the command-line tool for Windows, Linux and macOS.
           - **SHA256SUMS.txt**: checksums to verify the downloads.
+
+          $windows
           EOF
+          if [ "$SIGNED" = "true" ]; then
+            printf '\nFree code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).\n' >> notes.md
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else

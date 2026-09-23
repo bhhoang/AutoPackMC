@@ -30,14 +30,23 @@
 - **Start and stop** — one button each. Stopping sends `stop`, so the world is saved. Closing the window while a server runs asks first, then stops it cleanly.
 - **How friends join** — shows the address to share on the same Wi-Fi, and finds the internet address when asked (this contacts `api.ipify.org`).
 - **Crashes** — when a client-only mod crashes the server, the app names it and offers to turn it off and start again.
-- **Mods** — see which mods are on the server and which were left off, turn mods off or back on, search CurseForge for mods made for the server's Minecraft version and loader, paste a mod link, or add `.jar` files. Pack updates keep the mods you add and the ones you turn off.
+- **Mods** — see which mods are on the server and which were left off, turn mods off or back on, search CurseForge for mods made for the server's Minecraft version and loader, paste a mod link, or add `.jar` files. A mod that needs other mods brings them along, and removing it removes them again unless something else needs them. Pack updates keep the mods you add and the ones you turn off.
+- **Server settings** — the common `server.properties` settings as plain switches and choices (who can join, game mode, difficulty, PvP, flying, spawn protection, most players), and every other key under **Advanced settings**, searchable, with a note on what each one does. Changes apply the next time the server starts.
+- **Server picture** — choose a picture (PNG, JPEG, GIF, WebP, BMP or TIFF) or use the modpack's logo; it is cropped and shrunk to the 64 × 64 `server-icon.png` shown in the Multiplayer list.
 - **Server messages** — the live console, with a box to type commands.
+- **Open folder** — opens the server's folder in File Explorer.
+- **Updates** — AutoPack checks GitHub for a new version when it starts (this can be turned off in Settings), downloads it, checks it against `SHA256SUMS.txt`, and restarts into it.
+- **Look** — frosted glass with gentle motion. Settings has the animation length (Off, 0.5× to 4×, or Auto, which follows Windows) and **Glass effects**: Auto, Full, or Light, which uses solid panels for PCs that draw slowly. In Auto the app switches to Light by itself when Windows draws it without the graphics card or it cannot keep up.
 
 Settings, the server list and a log file (`autopack.log`) live in `%APPDATA%\AutoPack`. Mods you turn off are renamed to `*.jar.disabled` in `mods/`.
 
 Build it on Windows (needs the WebView2 runtime, which Windows 10 and 11 include):
 
 ```bash
+# Optional: the icon and version details Windows shows for the file
+go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest gui \
+  --icon cmd/autopack/build/appicon.png --product-name AutoPack --file-description AutoPack \
+  --product-version 0.0.0 --file-version 0.0.0 --original-filename AutoPack.exe --out cmd/autopack/rsrc
 go build -tags desktop,production -ldflags "-H windowsgui" -o AutoPack.exe ./cmd/autopack
 ```
 
@@ -49,9 +58,13 @@ The page is plain HTML, CSS and JavaScript in `cmd/autopack/frontend/`, embedded
 
 **Download:** the [Releases page](https://github.com/bhhoang/AutoPackMC/releases/latest) has the desktop app for Windows (`AutoPack-<version>-windows-amd64.exe`) and `mcpackctl` for Windows, Linux and macOS, with `SHA256SUMS.txt` to check them. `mcpackctl --version` prints the version you have.
 
+The Windows programs are signed (see [Code signing](#code-signing)). For a few days after a new version comes out, Windows SmartScreen may still say "Windows protected your PC", because it has not seen that download often yet. Choose **More info**, check that the publisher is **SignPath Foundation**, then choose **Run anyway**.
+
 ### Releases
 
 Every push to `main` that passes the tests is released automatically by `.github/workflows/release.yml`. The version comes from the commit messages since the last tag ([Conventional Commits](https://www.conventionalcommits.org)): a `feat:` commit bumps the minor version, `feat!:` or a `BREAKING CHANGE:` footer bumps the major version, and anything else bumps the patch. Add `[skip release]` to a commit message to push to `main` without releasing. Other branches and pull requests are only tested.
+
+A release builds `mcpackctl` for five platforms and AutoPack for Windows, gives the Windows programs their icon and version details, sends them to SignPath to be signed, waits for the signing request to be approved, and publishes everything with `SHA256SUMS.txt`. Until SignPath is set up, the Windows programs are published unsigned and the run shows a warning.
 
 ### Build from source
 
@@ -283,10 +296,57 @@ mcpackctl setup --input pack.zip --output ./server
 
 ---
 
+## Code signing
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+### Code signing policy
+
+- **Committers and reviewers:** [@bhhoang](https://github.com/bhhoang). Changes from anyone else come in as pull requests and are reviewed by a committer before they are merged.
+- **Approvers:** [@bhhoang](https://github.com/bhhoang). Every signing request is approved by hand in SignPath before anything is signed.
+- Only programs built by this repository's GitHub Actions workflow, from this repository's source code, are signed. Both Windows programs are signed: `AutoPack-<version>-windows-amd64.exe` and `mcpackctl-<version>-windows-amd64.exe`.
+- Everyone on the team uses multi-factor authentication for GitHub and SignPath.
+- **Privacy:** see [Privacy](#privacy) for every service AutoPack and mcpackctl contact, and when.
+
+### Setting up signing (maintainers)
+
+1. Apply for the free open-source program at [signpath.org/apply](https://signpath.org/apply). SignPath reviews the project first.
+2. Once accepted, in SignPath:
+   - Add the **GitHub.com** trusted build system to the organization, and link it to the project.
+   - Install the SignPath GitHub App for this repository.
+   - Paste [`.signpath/artifact-configuration.xml`](.signpath/artifact-configuration.xml) into the project's artifact configuration.
+   - Check that the `release-signing` policy has you as approver.
+   - Create an API token for a CI user that may submit signing requests to that policy.
+3. In the GitHub repository settings, under **Secrets and variables → Actions**, add:
+   - the secret `SIGNPATH_API_TOKEN` (the API token);
+   - the variable `SIGNPATH_ORGANIZATION_ID`;
+   - optionally the variables `SIGNPATH_PROJECT_SLUG` (default `AutoPackMC`) and `SIGNPATH_SIGNING_POLICY_SLUG` (default `release-signing`), if yours differ.
+4. From then on, every release sends a signing request to SignPath, and SignPath emails the approver. The release waits up to five hours for the approval; if it runs out, approve the request and re-run the failed jobs.
+
+---
+
+## Privacy
+
+Neither AutoPack nor mcpackctl collects analytics or sends anything about you or your PC. The log file stays on your PC. They only contact these services, and only for the reasons listed:
+
+| Service | When |
+|---------|------|
+| CurseForge (`api.curseforge.com`, `www.curseforge.com`, `*.forgecdn.net`) | Setting up or updating a pack from CurseForge, downloading its mods, searching for mods or adding one. |
+| Google Drive (`drive.google.com`, `drive.usercontent.google.com`) | Setting up a pack from a Google Drive link. |
+| Mod loader sites (`maven.minecraftforge.net`, `maven.neoforged.net`, `meta.fabricmc.net`) | Installing Forge, NeoForge or Fabric for a server. |
+| Adoptium (`api.adoptium.net`, which downloads from GitHub) | Downloading Java when a server needs a version your PC does not have. |
+| GitHub (`raw.githubusercontent.com`) | Downloading the community list of client-only mods during setup. |
+| GitHub (`api.github.com`, `github.com`) | AutoPack only: checking for a new version at start-up, which can be turned off in Settings, and downloading the update when you choose to. |
+| ipify (`api.ipify.org`) | AutoPack only: when you press **Find address** to see your internet address. |
+
+These services have their own privacy policies. The Minecraft server that AutoPack starts is Mojang's program; with **Check players' Minecraft accounts** on (`online-mode`), it checks each player's account with Mojang.
+
+---
+
 ## Project Structure
 ```
 cmd/mcpackctl/       CLI entrypoint (main.go)
-cmd/autopack/        Desktop app (Wails window + embedded frontend/)
+cmd/autopack/        Desktop app (Wails window + embedded frontend/, build/appicon.png)
 internal/
   app/               Desktop app logic: servers, setup jobs, running servers, mods
   cmd/               Cobra command definitions
@@ -305,10 +365,12 @@ pkg/
   utils/             Shared utilities (zip, rar, HTTP download)
 main.go              Thin root entrypoint
 Dockerfile           Container image based on openjdk:21-jdk-slim
+.github/workflows/   Test, version, build, sign and release
+.signpath/           SignPath artifact configuration (a copy of what is set in SignPath)
 ```
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE)
