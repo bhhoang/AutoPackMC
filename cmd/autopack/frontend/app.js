@@ -688,7 +688,7 @@
     applyStatic();
     renderSidebar();
     renderUpdate();
-    if (S.view === 'server'){ renderServer(); if (S.tab === 'props') renderProps(); if (S.tab === 'mods'){ renderMods(); $('#modUrlHelp').textContent = t('onlyCompatible', packVars(srv())); if (!addPanel.hidden) runSearch(); } }
+    if (S.view === 'server'){ renderServer(); if (S.tab === 'props' && S.props){ buildAdvanced(); renderProps(); } if (S.tab === 'mods'){ renderMods(); $('#modUrlHelp').textContent = t('onlyCompatible', packVars(srv())); if (!addPanel.hidden) runSearch(); } }
     if (S.view === 'new'){ $('#setupBtnTxt').textContent = t(S.form.update ? 'updateBtn' : 'setUp'); renderRAM(); validate();
       const up = S.form.update && S.servers.get(S.form.update);
       $('#newTitle').textContent = up ? t('updateTitle', {name: up.name}) : t('newServer'); $('#newMeta').textContent = up ? t('updateMeta') : t('newMeta'); }
@@ -706,11 +706,18 @@
     if (S.props && S.props.id === s.id) return renderProps(); // keep unsaved edits
     try {
       const p = await api().ServerProperties(s.id);
-      S.propsSaved = {...p}; S.props = {...p, id: s.id};
+      p.other = p.other || {};
+      S.propsSaved = {...p, other: {...p.other}}; S.props = {...p, other: {...p.other}, id: s.id};
+      buildAdvanced();
       renderProps();
     } catch (err){ toastErr(err); }
   }
-  const propsDirty = () => S.props && S.propsSaved && Object.keys(S.propsSaved).some(k => S.props[k] !== S.propsSaved[k]);
+  function propsDirty(){
+    if (!S.props || !S.propsSaved) return false;
+    const basic = Object.keys(S.propsSaved).filter(k => k !== 'other').some(k => S.props[k] !== S.propsSaved[k]);
+    const a = S.props.other, b = S.propsSaved.other;
+    return basic || Object.keys({...a, ...b}).some(k => a[k] !== b[k]);
+  }
 
   function segHTML(options, value){
     return options.map(([v, key]) => `<button type="button" role="radio" aria-checked="${v === value}" data-v="${v}">${esc(t(key))}</button>`).join('');
@@ -726,6 +733,8 @@
     $('#pDiff').innerHTML = segHTML(DIFFICULTIES, p.difficulty);
     if (document.activeElement !== $('#pMotd')) $('#pMotd').value = p.motd;
     $('#pMotdCount').textContent = `${[...p.motd].length}/59`;
+    $('#pSpawn').value = p.spawnProtection;
+    renderAdvanced();
     const dirty = propsDirty();
     $('#propsSave').disabled = !dirty; $('#propsUndo').disabled = !dirty;
   }
@@ -736,18 +745,113 @@
   $('#pMotd').addEventListener('input', e => setProp('motd', e.target.value));
   $('#pMax').addEventListener('change', e => setProp('maxPlayers', Math.max(1, Math.min(1000, parseInt(e.target.value, 10) || 1))));
   $$('#p-props [data-step]').forEach(b => b.onclick = () => setProp('maxPlayers', Math.max(1, Math.min(1000, S.props.maxPlayers + +b.dataset.step))));
+  $('#pSpawn').addEventListener('change', e => setProp('spawnProtection', Math.max(0, Math.min(100000, parseInt(e.target.value, 10) || 0))));
+  $$('#p-props [data-spawn]').forEach(b => b.onclick = () => setProp('spawnProtection', Math.max(0, Math.min(100000, S.props.spawnProtection + +b.dataset.spawn))));
+
+  /* Advanced settings: every other key in server.properties */
+  const schemaByKey = Object.fromEntries(PROP_SCHEMA.map(k => [k.key, k]));
+  // The rows shown for this server: every known key, plus keys it has that
+  // are not known (added by mods or a newer Minecraft).
+  function advancedKeys(){
+    const unknown = Object.keys(S.propsSaved ? S.propsSaved.other : {}).filter(k => !schemaByKey[k]).sort()
+      .map(k => ({key: k, group: 'other', type: 'text', def: '', unknown: true}));
+    return PROP_SCHEMA.concat(unknown);
+  }
+  const advValue = k => (k.key in S.props.other ? S.props.other[k.key] : k.def);
+  function controlHTML(k, id){
+    const v = advValue(k);
+    if (k.type === 'bool') return `<span class="switch"><input type="checkbox" id="${id}" ${v === 'true' ? 'checked' : ''}><i></i></span>`;
+    if (k.type === 'int') return `<input class="input num-in" id="${id}" type="number" inputmode="numeric" min="${k.min}" max="${k.max}" value="${esc(v)}">`;
+    if (k.type === 'enum') return `<select class="input" id="${id}">${k.options.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    const list = k.suggest ? ` list="${id}-list"` : '';
+    const opts = k.suggest ? `<datalist id="${id}-list">${k.suggest.map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
+    return `<input class="input" id="${id}" type="${k.type === 'secret' ? 'password' : 'text'}" value="${esc(v)}" autocomplete="off"${list}>${opts}`;
+  }
+  function buildAdvanced(){
+    const keys = advancedKeys();
+    $('#advGroups').innerHTML = PROP_GROUPS.map(g => {
+      const rows = keys.filter(k => k.group === g.id);
+      if (!rows.length) return '';
+      return `<section class="adv-group" data-group="${g.id}"><h4><span class="ms">${g.icon}</span><span>${esc(g[lang] || g.en)}</span></h4>${rows.map(k => {
+        const [label, help] = k.unknown ? [k.key, t('advUnknown')] : (k[lang] || k.en);
+        const id = 'adv-' + k.key.replace(/[^a-z0-9]/gi, '_');
+        const wide = k.type === 'text' || k.type === 'secret';
+        const search = (label + ' ' + k.key + ' ' + help).toLowerCase();
+        return `<div class="prow${wide ? ' wide' : ''}" data-key="${esc(k.key)}" data-search="${esc(search)}">
+          <div><label for="${id}"><b>${esc(label)}</b></label><span class="pkey">${esc(k.key)}</span><div class="help">${esc(help)}</div></div>
+          <div>${controlHTML(k, id)}</div></div>`;
+      }).join('')}</section>`;
+    }).join('');
+    filterAdvanced();
+  }
+  // Refreshes values and the changed markers without rebuilding the rows.
+  function renderAdvanced(){
+    if (!S.props) return;
+    $$('#advGroups .prow').forEach(row => {
+      const k = schemaByKey[row.dataset.key] || {key: row.dataset.key, type: 'text', def: ''};
+      const el = row.querySelector('input,select');
+      const v = advValue(k);
+      if (document.activeElement !== el){
+        if (k.type === 'bool') el.checked = v === 'true'; else el.value = v;
+      }
+      const saved = k.key in S.propsSaved.other ? S.propsSaved.other[k.key] : k.def;
+      row.classList.toggle('changed', v !== saved);
+    });
+  }
+  function setAdvanced(key, value){
+    const k = schemaByKey[key] || {key, def: ''};
+    // Leave keys that are not in the file out of it while they hold the default.
+    if (!(key in S.propsSaved.other) && value === k.def) delete S.props.other[key];
+    else S.props.other[key] = value;
+    renderProps();
+  }
+  function onAdvancedInput(e){
+    const row = e.target.closest('.prow'); if (!row) return;
+    const k = schemaByKey[row.dataset.key] || {type: 'text'};
+    let v = k.type === 'bool' ? String(e.target.checked) : e.target.value;
+    if (k.type === 'int'){
+      if (e.type === 'input') return; // wait for the whole number
+      const n = parseInt(v, 10);
+      v = String(Number.isNaN(n) ? k.def : Math.max(k.min, Math.min(k.max, n)));
+      e.target.value = v;
+    }
+    setAdvanced(row.dataset.key, v);
+  }
+  $('#advGroups').addEventListener('input', onAdvancedInput);
+  $('#advGroups').addEventListener('change', onAdvancedInput);
+  function filterAdvanced(){
+    const q = $('#propsSearch').value.trim().toLowerCase();
+    let shown = 0;
+    $$('#advGroups .adv-group').forEach(g => {
+      let n = 0;
+      g.querySelectorAll('.prow').forEach(r => { const hit = !q || r.dataset.search.includes(q); r.hidden = !hit; if (hit) n++; });
+      g.hidden = n === 0; shown += n;
+    });
+    $('#advEmpty').hidden = shown > 0;
+    $('#advEmpty').textContent = t('advNone', {q});
+    if (q) $('#propsAdv').open = true;
+  }
+  $('#propsSearch').addEventListener('input', filterAdvanced);
   $('#pMode').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) setProp('gamemode', b.dataset.v); });
   $('#pDiff').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) setProp('difficulty', b.dataset.v); });
-  $('#propsUndo').onclick = () => { S.props = {...S.propsSaved, id: S.props.id}; $('#pMotd').value = S.props.motd; renderProps(); };
+  $('#propsUndo').onclick = () => {
+    S.props = {...S.propsSaved, other: {...S.propsSaved.other}, id: S.props.id};
+    $('#pMotd').value = S.props.motd;
+    $$('#advGroups .prow input, #advGroups .prow select').forEach(el => el.blur());
+    renderProps();
+  };
   $('#propsFile').onclick = () => api().OpenServerProperties(S.current);
   $('#propsForm').addEventListener('submit', async e => {
     e.preventDefault();
     if (!propsDirty()) return;
     const {id, ...values} = S.props;
+    // Only changed advanced keys are sent; the server keeps every other line.
+    const changed = {};
+    for (const [k, v] of Object.entries(values.other)) if (S.propsSaved.other[k] !== v) changed[k] = v;
     $('#propsSave').disabled = true;
     try {
-      await api().SetServerProperties(id, values);
-      S.propsSaved = {...values};
+      await api().SetServerProperties(id, {...values, other: changed});
+      S.propsSaved = {...values, other: {...values.other}};
       toast(t('toastPropsSaved'));
       const s = srv();
       $('#propsNote').hidden = !(s && s.state === 'running');

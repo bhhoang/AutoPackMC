@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,12 +23,26 @@ type ServerProps struct {
 	PVP         bool   `json:"pvp"`         // players can hurt each other
 	AllowFlight bool   `json:"allowFlight"` // flying (from mods) does not get players kicked
 	MOTD        string `json:"motd"`        // the name shown in the multiplayer list
+	// SpawnProtection is the radius around spawn where only ops can build.
+	SpawnProtection int `json:"spawnProtection"`
+	// Other holds every other key in server.properties, for the Advanced
+	// settings. Saving writes the keys it holds and keeps the rest.
+	Other map[string]string `json:"other"`
 }
+
+// basicKeys are the keys ServerProps has fields for.
+var basicKeys = map[string]bool{
+	"online-mode": true, "max-players": true, "gamemode": true, "difficulty": true,
+	"pvp": true, "allow-flight": true, "motd": true, "spawn-protection": true,
+}
+
+// propertyKey is what a server.properties key may look like.
+var propertyKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$`)
 
 // Minecraft's defaults, used for keys a server.properties does not set.
 var defaultProps = ServerProps{
 	OnlineMode: true, MaxPlayers: 20, Gamemode: "survival", Difficulty: "easy",
-	PVP: true, AllowFlight: false, MOTD: "A Minecraft Server",
+	PVP: true, AllowFlight: false, MOTD: "A Minecraft Server", SpawnProtection: 16,
 }
 
 var (
@@ -66,6 +81,15 @@ func (s *Service) ServerProperties(id string) (*ServerProps, error) {
 	if v, ok := values["motd"]; ok {
 		p.MOTD = v
 	}
+	if n, err := strconv.Atoi(values["spawn-protection"]); err == nil && n >= 0 {
+		p.SpawnProtection = n
+	}
+	p.Other = map[string]string{}
+	for k, v := range values {
+		if !basicKeys[k] {
+			p.Other[k] = v
+		}
+	}
 	return &p, nil
 }
 
@@ -77,22 +101,37 @@ func (s *Service) SetServerProperties(id string, p ServerProps) error {
 	if !ok {
 		return &Error{Code: "no_server"}
 	}
-	if p.MaxPlayers < 1 || p.MaxPlayers > 1000 || !gamemodes[p.Gamemode] || !difficulties[p.Difficulty] {
+	if p.MaxPlayers < 1 || p.MaxPlayers > 1000 || !gamemodes[p.Gamemode] || !difficulties[p.Difficulty] ||
+		p.SpawnProtection < 0 || p.SpawnProtection > 100000 {
 		return &Error{Code: "bad_setting"}
+	}
+	set := map[string]string{}
+	for k, v := range p.Other {
+		if basicKeys[k] {
+			continue // the typed fields win
+		}
+		if !propertyKey.MatchString(k) || strings.ContainsAny(v, "\r\n") || len(v) > 4096 {
+			return &Error{Code: "bad_setting", Detail: k}
+		}
+		set[k] = v
 	}
 	motd := strings.Join(strings.Fields(strings.ReplaceAll(p.MOTD, "\n", " ")), " ")
 	if len([]rune(motd)) > 59 {
 		motd = string([]rune(motd)[:59])
 	}
-	err := updateProperties(filepath.Join(rec.Dir, "server.properties"), map[string]string{
-		"online-mode":  strconv.FormatBool(p.OnlineMode),
-		"max-players":  strconv.Itoa(p.MaxPlayers),
-		"gamemode":     p.Gamemode,
-		"difficulty":   p.Difficulty,
-		"pvp":          strconv.FormatBool(p.PVP),
-		"allow-flight": strconv.FormatBool(p.AllowFlight),
-		"motd":         motd,
-	})
+	for k, v := range map[string]string{
+		"online-mode":      strconv.FormatBool(p.OnlineMode),
+		"max-players":      strconv.Itoa(p.MaxPlayers),
+		"gamemode":         p.Gamemode,
+		"difficulty":       p.Difficulty,
+		"pvp":              strconv.FormatBool(p.PVP),
+		"allow-flight":     strconv.FormatBool(p.AllowFlight),
+		"motd":             motd,
+		"spawn-protection": strconv.Itoa(p.SpawnProtection),
+	} {
+		set[k] = v
+	}
+	err := updateProperties(filepath.Join(rec.Dir, "server.properties"), set)
 	if err != nil {
 		return userError(err)
 	}

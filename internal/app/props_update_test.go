@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	goruntime "runtime"
 	"strings"
 	"testing"
@@ -49,7 +50,7 @@ func TestServerPropertiesRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *got != *p {
+	if !reflect.DeepEqual(got, p) {
 		t.Errorf("read back %+v, want %+v", got, p)
 	}
 	if s.view(mustServer(t, s, rec.ID)).MaxPlayers != 8 {
@@ -234,4 +235,46 @@ func mustServer(t *testing.T, s *Service, id string) ServerRecord {
 		t.Fatalf("no server %s", id)
 	}
 	return rec
+}
+
+func TestAdvancedPropertiesAreReadAndWritten(t *testing.T) {
+	s, _ := newTestService(t)
+	rec := addServer(t, s)
+	path := filepath.Join(rec.Dir, "server.properties")
+	writeFile(t, path, "#comment\nview-distance=10\nnetwork-compression-threshold=256\nspawn-protection=16\nsome-mod-key=abc\n")
+
+	p, err := s.ServerProperties(rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.SpawnProtection != 16 || p.Other["view-distance"] != "10" || p.Other["some-mod-key"] != "abc" {
+		t.Fatalf("read %+v", p)
+	}
+	if _, ok := p.Other["spawn-protection"]; ok {
+		t.Error("a basic key is also listed among the advanced ones")
+	}
+
+	p.SpawnProtection = 0
+	p.Other["network-compression-threshold"] = "-1"
+	p.Other["enable-command-block"] = "true" // not in the file yet
+	p.Other["online-mode"] = "false"         // basic keys cannot be set this way
+	if err := s.SetServerProperties(rec.ID, *p); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	text := string(data)
+	for _, want := range []string{"#comment", "view-distance=10", "network-compression-threshold=-1", "enable-command-block=true", "spawn-protection=0", "some-mod-key=abc", "online-mode=true"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("server.properties lacks %q:\n%s", want, text)
+		}
+	}
+
+	var ue *Error
+	for _, bad := range []map[string]string{{"bad key": "x"}, {"motd-extra": "line\nbreak"}, {"": "x"}} {
+		q := *p
+		q.Other = bad
+		if err := s.SetServerProperties(rec.ID, q); !errors.As(err, &ue) || ue.Code != "bad_setting" {
+			t.Errorf("SetServerProperties(%q) = %v, want bad_setting", bad, err)
+		}
+	}
 }

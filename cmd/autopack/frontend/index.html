@@ -218,6 +218,14 @@
                   <div><b data-i18n="pvp"></b><div class="help" data-i18n="pvpHelp"></div></div>
                   <span class="switch"><input type="checkbox" id="pPvp" data-i18n-aria="pvp"><i></i></span>
                 </div>
+                <div class="toggle">
+                  <div><b id="pSpawnLbl" data-i18n="spawnProtection"></b><div class="help" data-i18n="spawnProtectionHelp"></div></div>
+                  <div class="stepper" role="group" aria-labelledby="pSpawnLbl">
+                    <button type="button" data-spawn="-1" data-i18n-aria="fewer"><span class="ms">remove</span></button>
+                    <input id="pSpawn" type="number" min="0" max="100000" inputmode="numeric" aria-labelledby="pSpawnLbl">
+                    <button type="button" data-spawn="1" data-i18n-aria="more"><span class="ms">add</span></button>
+                  </div>
+                </div>
               </div>
 
               <div class="card wide">
@@ -232,6 +240,19 @@
                 </div>
               </div>
             </div>
+
+            <details class="adv" id="propsAdv">
+              <summary><span class="ms">tune</span><span data-i18n="advProps"></span><span class="small" style="font-weight:500" data-i18n="advPropsHint"></span><span class="ms chev">expand_more</span></summary>
+              <div class="adv-body">
+                <div class="search">
+                  <span class="ms">search</span>
+                  <label for="propsSearch" class="sr" data-i18n="advSearch"></label>
+                  <input class="input" id="propsSearch" type="search" data-i18n-ph="advSearch" autocomplete="off">
+                </div>
+                <div class="adv-groups" id="advGroups"></div>
+                <p class="help" id="advEmpty" hidden></p>
+              </div>
+            </details>
 
             <div class="notice" id="propsNote" hidden>
               <span class="ms">restart_alt</span><span data-i18n="propsRestart"></span>
@@ -479,6 +500,7 @@
 <div class="toast glass" id="toast" role="status"><span class="ms fill" id="toastIcon">check_circle</span><span id="toastMsg"></span></div>
 
 <script src="i18n.js"></script>
+<script src="props-schema.js"></script>
 <script src="scene.js"></script>
 <script src="app.js"></script>
 </body>
