@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bhhoang/AutoPackMC/internal/parser"
+	"github.com/bhhoang/IDISMAM/internal/parser"
 )
 
 // siteNullServer answers every request the way CurseForge's website API answers

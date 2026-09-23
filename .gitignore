@@ -1,4 +1,5 @@
 # Local builds (releases are built by CI)
+/IDISMAM*.exe
 /AutoPack*.exe
 /dist/
 # Windows resources made by go-winres in CI

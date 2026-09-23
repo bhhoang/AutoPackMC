@@ -1,4 +1,4 @@
-module github.com/bhhoang/AutoPackMC
+module github.com/bhhoang/IDISMAM
 
 go 1.25.0
 

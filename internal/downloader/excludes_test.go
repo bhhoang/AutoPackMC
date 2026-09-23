@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/bhhoang/AutoPackMC/internal/parser"
+	"github.com/bhhoang/IDISMAM/internal/parser"
 )
 
 const testExcludeList = `{

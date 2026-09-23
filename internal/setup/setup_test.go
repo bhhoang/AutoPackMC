@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/bhhoang/AutoPackMC/internal/downloader"
+	"github.com/bhhoang/IDISMAM/internal/downloader"
 )
 
 // writeRawPack creates a raw pack (a mods/ folder, no loader metadata) with

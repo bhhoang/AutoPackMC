@@ -1,4 +1,4 @@
-// Package app is the logic behind the AutoPack desktop window: servers the
+// Package app is the logic behind the IDISMAM desktop window: servers the
 // user has set up, setting up and updating packs, running servers, and
 // managing their mods. It has no dependency on the window toolkit; the
 // window reaches it through the exported methods of Service and receives
@@ -19,11 +19,11 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/bhhoang/AutoPackMC/internal/detector"
-	"github.com/bhhoang/AutoPackMC/internal/downloader"
-	"github.com/bhhoang/AutoPackMC/internal/resolver"
-	"github.com/bhhoang/AutoPackMC/internal/setup"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/IDISMAM/internal/detector"
+	"github.com/bhhoang/IDISMAM/internal/downloader"
+	"github.com/bhhoang/IDISMAM/internal/resolver"
+	"github.com/bhhoang/IDISMAM/internal/setup"
+	"github.com/bhhoang/IDISMAM/pkg/logger"
 )
 
 // UI is what the service needs from the window it runs in.

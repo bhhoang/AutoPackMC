@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
-	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/bhhoang/IDISMAM/pkg/logger"
+	"github.com/bhhoang/IDISMAM/pkg/utils"
 )
 
 // adoptiumAPIBase is the Adoptium API, overridable in tests. Its assets

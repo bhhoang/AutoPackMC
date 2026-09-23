@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/bhhoang/AutoPackMC/internal/parser"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
-	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/bhhoang/IDISMAM/internal/parser"
+	"github.com/bhhoang/IDISMAM/pkg/logger"
+	"github.com/bhhoang/IDISMAM/pkg/utils"
 )
 
 // ErrChecksumMismatch means a downloaded file does not match the size or

@@ -26,7 +26,7 @@ type Settings struct {
 	// LightDetected is set when the automatic check found this PC draws
 	// the full look slowly, so the next start uses the light look at once.
 	LightDetected bool `json:"lightDetected"`
-	// SkipUpdateCheck turns off looking for a new AutoPack at startup.
+	// SkipUpdateCheck turns off looking for a new IDISMAM at startup.
 	SkipUpdateCheck bool `json:"skipUpdateCheck"`
 }
 

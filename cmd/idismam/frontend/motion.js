@@ -1,4 +1,4 @@
-// AutoPack motion and glass material.
+// IDISMAM motion and glass material.
 //
 // This is a web approximation of a "liquid glass" material, not Apple's
 // Liquid Glass (which exists only on Apple platforms). It uses what the

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bhhoang/AutoPackMC/internal/parser"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
-	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/bhhoang/IDISMAM/internal/parser"
+	"github.com/bhhoang/IDISMAM/pkg/logger"
+	"github.com/bhhoang/IDISMAM/pkg/utils"
 )
 
 // DefaultExcludeListURL is the community-maintained list of client-only

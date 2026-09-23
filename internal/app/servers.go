@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bhhoang/AutoPackMC/internal/java"
-	"github.com/bhhoang/AutoPackMC/internal/runtime"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/IDISMAM/internal/java"
+	"github.com/bhhoang/IDISMAM/internal/runtime"
+	"github.com/bhhoang/IDISMAM/pkg/logger"
 )
 
 // Server states shown on the page.

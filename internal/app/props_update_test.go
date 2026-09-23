@@ -100,11 +100,11 @@ func TestExistingDirAndServerDirIn(t *testing.T) {
 	}
 }
 
-// fakeRelease serves a GitHub "latest release" with an AutoPack build for
+// fakeRelease serves a GitHub "latest release" with an IDISMAM build for
 // this OS and its SHA256SUMS.txt.
 func fakeRelease(t *testing.T, tag string, exe []byte, corrupt bool) *httptest.Server {
 	t.Helper()
-	name := fmt.Sprintf("AutoPack-%s-%s-%s.exe", tag, goruntime.GOOS, goruntime.GOARCH)
+	name := fmt.Sprintf("IDISMAM-%s-%s-%s.exe", tag, goruntime.GOOS, goruntime.GOARCH)
 	sum := sha256.Sum256(exe)
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +134,7 @@ func fakeRelease(t *testing.T, tag string, exe []byte, corrupt bool) *httptest.S
 func updateService(t *testing.T, version, api string) (*Service, string) {
 	t.Helper()
 	dir := t.TempDir()
-	exe := filepath.Join(dir, "AutoPack.exe")
+	exe := filepath.Join(dir, "IDISMAM.exe")
 	writeFile(t, exe, "old build")
 	s, err := New(Config{
 		DataDir: filepath.Join(dir, "data"), Version: version,

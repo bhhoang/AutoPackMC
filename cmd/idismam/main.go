@@ -1,9 +1,9 @@
-// Command autopack is the AutoPack desktop app: a window for setting up and
+// Command idismam is the IDISMAM desktop app: a window for setting up and
 // running Minecraft modpack servers without the command line.
 //
 // Build it on Windows with:
 //
-//	go build -tags desktop,production -ldflags "-H windowsgui" -o AutoPack.exe ./cmd/autopack
+//	go build -tags desktop,production -ldflags "-H windowsgui" -o IDISMAM.exe ./cmd/idismam
 package main
 
 import (
@@ -21,10 +21,10 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
-	"github.com/bhhoang/AutoPackMC/internal/app"
-	"github.com/bhhoang/AutoPackMC/internal/downloader"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
-	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/bhhoang/IDISMAM/internal/app"
+	"github.com/bhhoang/IDISMAM/internal/downloader"
+	"github.com/bhhoang/IDISMAM/pkg/logger"
+	"github.com/bhhoang/IDISMAM/pkg/utils"
 )
 
 //go:embed all:frontend
@@ -50,11 +50,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	dataDir := filepath.Join(configDir, "AutoPack")
+	// The app used to be called AutoPack; its settings move over on first start.
+	dataDir := app.DataDir(configDir)
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
-	logFile := openLog(filepath.Join(dataDir, "autopack.log"))
+	logFile := openLog(filepath.Join(dataDir, "idismam.log"))
 	defer logFile.Close()
 	logger.SetOutput(logFile, "info")
 
@@ -66,7 +67,7 @@ func main() {
 		DefaultAPIKey:     publicAPIKey,
 		ExcludeListSource: downloader.DefaultExcludeListURL,
 		Version:           version,
-		UpdateRepo:        "bhhoang/AutoPackMC",
+		UpdateRepo:        "bhhoang/IDISMAM",
 	}, ui)
 	if err != nil {
 		logger.Get().Fatal().Err(err).Msg("cannot load saved servers")
@@ -78,7 +79,7 @@ func main() {
 		log.Fatal(err)
 	}
 	err = wails.Run(&options.App{
-		Title:            "AutoPack",
+		Title:            "IDISMAM",
 		Width:            1180,
 		Height:           780,
 		MinWidth:         960,
@@ -92,7 +93,7 @@ func main() {
 		Bind:             []interface{}{svc, win},
 		DragAndDrop:      &options.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: true},
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId:               "autopack-8f4d2c1e-desktop",
+			UniqueId:               "idismam-8f4d2c1e-desktop",
 			OnSecondInstanceLaunch: win.secondInstance,
 		},
 		Windows: &windows.Options{

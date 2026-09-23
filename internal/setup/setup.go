@@ -1,6 +1,6 @@
 // Package setup turns a modpack (a CurseForge URL, a Google Drive link, a
 // ZIP/RAR archive or an extracted directory) into a ready-to-start Minecraft
-// server. It is shared by the mcpackctl CLI and the AutoPack desktop app.
+// server. It is shared by the mcpackctl CLI and the IDISMAM desktop app.
 package setup
 
 import (
@@ -9,16 +9,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bhhoang/AutoPackMC/internal/cleaner"
-	"github.com/bhhoang/AutoPackMC/internal/detector"
-	"github.com/bhhoang/AutoPackMC/internal/downloader"
-	"github.com/bhhoang/AutoPackMC/internal/installer"
-	"github.com/bhhoang/AutoPackMC/internal/java"
-	"github.com/bhhoang/AutoPackMC/internal/modstate"
-	"github.com/bhhoang/AutoPackMC/internal/parser"
-	"github.com/bhhoang/AutoPackMC/internal/resolver"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
-	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/bhhoang/IDISMAM/internal/cleaner"
+	"github.com/bhhoang/IDISMAM/internal/detector"
+	"github.com/bhhoang/IDISMAM/internal/downloader"
+	"github.com/bhhoang/IDISMAM/internal/installer"
+	"github.com/bhhoang/IDISMAM/internal/java"
+	"github.com/bhhoang/IDISMAM/internal/modstate"
+	"github.com/bhhoang/IDISMAM/internal/parser"
+	"github.com/bhhoang/IDISMAM/internal/resolver"
+	"github.com/bhhoang/IDISMAM/pkg/logger"
+	"github.com/bhhoang/IDISMAM/pkg/utils"
 )
 
 // Stage is a step of a setup, reported through Options.OnStage.

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/IDISMAM/pkg/logger"
 )
 
 // ClientOnlyMod is a mod that crashed a dedicated server by loading

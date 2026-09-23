@@ -1,6 +1,6 @@
 # Tests every push and pull request. On a push to main it also picks the next
 # version from the commit messages, tags it, builds the mcpackctl CLI and the
-# AutoPack desktop app, and publishes them as a GitHub release.
+# IDISMAM desktop app, and publishes them as a GitHub release.
 #
 # Version bumps follow Conventional Commits since the last v* tag:
 #   feat: ...                    -> minor (v0.1.0 -> v0.2.0)
@@ -15,7 +15,7 @@
 # unsigned. See "Code signing" in the README.
 #   secret   SIGNPATH_API_TOKEN
 #   variable SIGNPATH_ORGANIZATION_ID
-#   variable SIGNPATH_PROJECT_SLUG           (default: AutoPackMC)
+#   variable SIGNPATH_PROJECT_SLUG           (default: IDISMAM)
 #   variable SIGNPATH_SIGNING_POLICY_SLUG    (default: release-signing)
 name: Build and release
 
@@ -51,7 +51,7 @@ jobs:
         run: go vet ./...
       - name: Vet the desktop app
         if: runner.os == 'Windows'
-        run: go vet -tags desktop,production ./cmd/autopack
+        run: go vet -tags desktop,production ./cmd/idismam
       - name: Test with the race detector
         if: runner.os == 'Linux'
         run: go test -race ./...
@@ -171,7 +171,7 @@ jobs:
         run: |
           mkdir -p dist
           go build -trimpath \
-            -ldflags "-s -w -X github.com/bhhoang/AutoPackMC/internal/cmd.version=$TAG" \
+            -ldflags "-s -w -X github.com/bhhoang/IDISMAM/internal/cmd.version=$TAG" \
             -o "dist/mcpackctl-$TAG-$GOOS-$GOARCH${{ matrix.ext }}" ./cmd/mcpackctl
       - uses: actions/upload-artifact@v4
         with:
@@ -199,11 +199,11 @@ jobs:
           # Windows shows these in the file's properties and in its own
           # prompts; the manifest is the usual one for a desktop app.
           go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest gui \
-            --icon cmd/autopack/build/appicon.png \
-            --product-name AutoPack --file-description AutoPack \
+            --icon cmd/idismam/build/appicon.png \
+            --product-name IDISMAM --file-description IDISMAM \
             --product-version "${TAG#v}" --file-version "${TAG#v}" \
             --copyright "Copyright (c) bhhoang. MIT License." \
-            --original-filename AutoPack.exe --out cmd/autopack/rsrc
+            --original-filename IDISMAM.exe --out cmd/idismam/rsrc
       - name: Build
         shell: bash
         env:
@@ -212,7 +212,7 @@ jobs:
           mkdir -p dist
           go build -trimpath -tags desktop,production \
             -ldflags "-s -w -H windowsgui -X main.version=$TAG" \
-            -o "dist/AutoPack-$TAG-windows-amd64.exe" ./cmd/autopack
+            -o "dist/IDISMAM-$TAG-windows-amd64.exe" ./cmd/idismam
       - uses: actions/upload-artifact@v4
         with:
           name: gui-windows-amd64
@@ -266,7 +266,7 @@ jobs:
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'AutoPackMC' }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'IDISMAM' }}
           signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
@@ -304,6 +304,14 @@ jobs:
         with:
           name: windows-release
           path: dist
+      - name: Copy for AutoPack's updater
+        working-directory: dist
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        # The app was called AutoPack up to v0.2.0, and those copies update
+        # to the file named AutoPack-<tag>-windows-amd64.exe. The same
+        # IDISMAM program under that name lets them update into IDISMAM.
+        run: cp "IDISMAM-$TAG-windows-amd64.exe" "AutoPack-$TAG-windows-amd64.exe"
       - name: Checksums
         working-directory: dist
         run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
@@ -322,7 +330,8 @@ jobs:
           cat > notes.md <<EOF
           ## Downloads
 
-          - **AutoPack-$TAG-windows-amd64.exe**: the desktop app for Windows 10 and 11. Download it and double-click it; nothing needs installing.
+          - **IDISMAM-$TAG-windows-amd64.exe**: the desktop app for Windows 10 and 11. Download it and double-click it; nothing needs installing.
+          - **AutoPack-$TAG-windows-amd64.exe**: the same app under its old name, so AutoPack v0.2.0 and older can update to it. New downloads should use the IDISMAM file.
           - **mcpackctl-$TAG-&lt;os&gt;-&lt;arch&gt;**: the command-line tool for Windows, Linux and macOS.
           - **SHA256SUMS.txt**: checksums to verify the downloads.
 

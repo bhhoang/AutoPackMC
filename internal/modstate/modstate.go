@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/IDISMAM/pkg/logger"
 )
 
 const (

@@ -1,6 +1,6 @@
 package main
 
-import "github.com/bhhoang/AutoPackMC/internal/cmd"
+import "github.com/bhhoang/IDISMAM/internal/cmd"
 
 func main() {
 	cmd.Execute()
