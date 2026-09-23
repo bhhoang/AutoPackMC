@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	goruntime "runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -106,6 +108,27 @@ func (w *Window) IsMaximised() bool { return runtime.WindowIsMaximised(w.ctx) }
 
 // Close closes the window, first asking about running servers.
 func (w *Window) Close() { runtime.Quit(w.ctx) }
+
+// RestartIntoUpdate installs the downloaded new version and restarts into
+// it: running servers are saved and stopped first, then the new version
+// starts and this one closes. A setup in progress blocks the update.
+func (w *Window) RestartIntoUpdate() error {
+	if w.svc.SetupRunning() {
+		return &app.Error{Code: "setup_running"}
+	}
+	w.svc.StopAll()
+	exe, err := w.svc.ApplyUpdate()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(exe, "--after-update", strconv.Itoa(os.Getpid())) // #nosec G204
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	w.quitting.Store(true)
+	runtime.Quit(w.ctx)
+	return nil
+}
 
 // StopServersAndQuit cancels a running setup (letting it put the server
 // folder back as it was), saves and stops every running server, then closes.

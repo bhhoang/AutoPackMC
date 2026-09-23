@@ -31,6 +31,11 @@
       <div class="srv-list" id="srvList"></div>
       <button class="btn full" type="button" id="newBtn"><span class="ms">add</span><span data-i18n="newServer"></span></button>
       <div class="grow"></div>
+      <div class="update-box" id="updBox" hidden>
+        <div class="update-head"><span class="ms">update</span><span id="updText"></span></div>
+        <div class="bar" id="updBar" hidden><i></i></div>
+        <button class="btn sm full" type="button" id="updBtn" data-i18n="updateNow"></button>
+      </div>
       <button class="side-link" type="button" id="settingsBtn"><span class="ms">settings</span><span data-i18n="settings"></span></button>
       <button class="side-link" type="button" data-open="https://github.com/bhhoang/AutoPackMC#readme"><span class="ms">help</span><span data-i18n="help"></span></button>
     </nav>
@@ -64,6 +69,7 @@
           <div class="tabs" role="tablist" data-i18n-aria="serverSections">
             <button role="tab" aria-selected="true" data-tab="overview" id="t-overview"><span class="ms">space_dashboard</span><span data-i18n="tabOverview"></span></button>
             <button role="tab" aria-selected="false" data-tab="mods" id="t-mods"><span class="ms">extension</span><span data-i18n="tabMods"></span></button>
+            <button role="tab" aria-selected="false" data-tab="props" id="t-props"><span class="ms">tune</span><span data-i18n="tabProps"></span></button>
             <button role="tab" aria-selected="false" data-tab="console" id="t-console"><span class="ms">terminal</span><span data-i18n="tabConsole"></span></button>
           </div>
         </div>
@@ -172,6 +178,71 @@
             <p class="help" data-i18n="modsHelp"></p>
             <div class="mods" id="modList"></div>
           </div>
+        </div>
+
+        <div role="tabpanel" id="p-props" aria-labelledby="t-props" hidden>
+          <form class="view" id="propsForm" novalidate>
+            <div class="props-grid">
+              <div class="card side-card">
+                <h3><span class="ms">group</span><span data-i18n="whoJoins"></span></h3>
+                <div class="toggle">
+                  <div><b data-i18n="onlineMode"></b><div class="help" data-i18n="onlineModeHelp"></div></div>
+                  <span class="switch"><input type="checkbox" id="pOnline" data-i18n-aria="onlineMode"><i></i></span>
+                </div>
+                <div class="warn-note" id="pOnlineWarn" hidden><span class="ms">warning</span><span data-i18n="offlineWarn"></span></div>
+                <div class="toggle">
+                  <div><b id="pMaxLbl" data-i18n="maxPlayers"></b><div class="help" data-i18n="maxPlayersHelp"></div></div>
+                  <div class="stepper" role="group" aria-labelledby="pMaxLbl">
+                    <button type="button" data-step="-1" data-i18n-aria="fewer"><span class="ms">remove</span></button>
+                    <input id="pMax" type="number" min="1" max="1000" inputmode="numeric" aria-labelledby="pMaxLbl">
+                    <button type="button" data-step="1" data-i18n-aria="more"><span class="ms">add</span></button>
+                  </div>
+                </div>
+                <div class="toggle">
+                  <div><b data-i18n="allowFlight"></b><div class="help" data-i18n="allowFlightHelp"></div></div>
+                  <span class="switch"><input type="checkbox" id="pFlight" data-i18n-aria="allowFlight"><i></i></span>
+                </div>
+              </div>
+
+              <div class="card side-card">
+                <h3><span class="ms">sports_esports</span><span data-i18n="gameplay"></span></h3>
+                <div class="field" style="margin-top:0">
+                  <span class="lbl" id="pModeLbl" data-i18n="gamemode"></span>
+                  <div class="opt-seg" role="radiogroup" aria-labelledby="pModeLbl" id="pMode"></div>
+                </div>
+                <div class="field" style="margin-top:0">
+                  <span class="lbl" id="pDiffLbl" data-i18n="difficulty"></span>
+                  <div class="opt-seg four" role="radiogroup" aria-labelledby="pDiffLbl" id="pDiff"></div>
+                </div>
+                <div class="toggle">
+                  <div><b data-i18n="pvp"></b><div class="help" data-i18n="pvpHelp"></div></div>
+                  <span class="switch"><input type="checkbox" id="pPvp" data-i18n-aria="pvp"><i></i></span>
+                </div>
+              </div>
+
+              <div class="card wide">
+                <h3><span class="ms">badge</span><span data-i18n="motdTitle"></span></h3>
+                <div class="field">
+                  <label for="pMotd" data-i18n="motdLabel"></label>
+                  <input class="input" id="pMotd" maxlength="59" autocomplete="off" aria-describedby="pMotdHelp">
+                  <div class="row" style="justify-content:space-between">
+                    <span class="help" id="pMotdHelp" data-i18n="motdHelp"></span>
+                    <span class="help num" id="pMotdCount"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="notice" id="propsNote" hidden>
+              <span class="ms">restart_alt</span><span data-i18n="propsRestart"></span>
+              <button class="btn sm" type="button" data-act="restart" data-i18n="restartNow"></button>
+            </div>
+            <div class="form-foot">
+              <button class="btn primary" type="submit" id="propsSave" disabled><span class="ms">check</span><span data-i18n="saveSettings"></span></button>
+              <button class="btn ghost" type="button" id="propsUndo" disabled data-i18n="undoChanges"></button>
+              <button class="link" type="button" id="propsFile" data-i18n="editPropsFile"></button>
+            </div>
+          </form>
         </div>
 
         <div role="tabpanel" id="p-console" aria-labelledby="t-console" hidden>
@@ -362,7 +433,13 @@
               <div class="row"><input class="input" id="setDir" readonly><button class="btn" type="button" id="pickSetDir" data-i18n="change"></button></div>
             </div>
           </div>
-          <div class="card wide">
+          <div class="card">
+            <h3><span class="ms">update</span><span data-i18n="appVersion"></span></h3>
+            <p class="help" style="margin-top:8px" id="verText"></p>
+            <div class="toggle"><b style="font-size:14px" data-i18n="autoCheck"></b><span class="switch"><input type="checkbox" id="setUpdCheck" data-i18n-aria="autoCheck"><i></i></span></div>
+            <div class="row" style="margin-top:12px"><button class="btn sm" type="button" id="checkUpd"><span class="ms">refresh</span><span data-i18n="checkUpdates"></span></button><span class="help" id="updStatus"></span></div>
+          </div>
+          <div class="card">
             <h3><span class="ms">key</span><span data-i18n="cfKey"></span></h3>
             <div class="field">
               <label for="setKey" data-i18n="apiKey"></label>
@@ -371,7 +448,6 @@
             </div>
           </div>
         </div>
-        <p class="version" id="version"></p>
       </section>
 
     </main>
@@ -385,6 +461,17 @@
     <div class="row">
       <button class="btn" type="button" id="closeKeep" data-i18n="closeKeep"></button>
       <button class="btn primary" type="button" id="closeStop"><span class="ms fill">stop</span><span data-i18n="closeStop"></span></button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-back" id="updDlg" hidden>
+  <div class="modal glass" role="alertdialog" aria-modal="true" aria-labelledby="updDlgTitle" aria-describedby="updDlgText">
+    <h2 id="updDlgTitle" data-i18n="updDlgTitle"></h2>
+    <p class="lead" id="updDlgText" data-i18n="updDlgText"></p>
+    <div class="row">
+      <button class="btn" type="button" id="updDlgNo" data-i18n="notNow"></button>
+      <button class="btn primary" type="button" id="updDlgYes"><span class="ms">update</span><span data-i18n="updateRestart"></span></button>
     </div>
   </div>
 </div>

@@ -386,3 +386,27 @@ button.drop:hover{border-color:var(--accent)}
 @media (prefers-reduced-transparency: reduce){
   .titlebar,.side,.card,details.adv,.tabs,.chip,.notice{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--solid)}
 }
+
+/* Server settings tab */
+.props-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.props-grid .card.wide{grid-column:1 / -1}
+.props-grid .toggle{margin-top:0}
+.props-grid .toggle b{font-size:14.5px}
+.lbl{font-weight:600;font-size:14px}
+.opt-seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.opt-seg.four{grid-template-columns:repeat(4,1fr)}
+.opt-seg button{height:40px;border-radius:12px;border:1.5px solid var(--field-border);background:var(--field);font-weight:600;font-size:13.5px;cursor:pointer;color:var(--text);padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opt-seg button[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.stepper{display:inline-flex;align-items:center;border:1.5px solid var(--field-border);border-radius:12px;background:var(--field);flex:none}
+.stepper button{width:38px;height:40px;border:0;background:transparent;color:var(--text);cursor:pointer;display:grid;place-items:center}
+.stepper button:hover{background:var(--glass-soft)}
+.stepper input{width:52px;height:40px;border:0;background:transparent;text-align:center;font:600 15px var(--font-body);color:var(--text);-moz-appearance:textfield}
+.stepper input::-webkit-inner-spin-button{-webkit-appearance:none}
+.warn-note{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--danger-soft);color:var(--text);font-size:13.5px}
+.warn-note .ms{color:var(--danger);font-size:18px}
+#propsForm .form-foot .link{margin-left:auto;font-size:14px}
+/* Update notice in the sidebar */
+.update-box{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:14px;background:var(--accent-soft);border:1px solid var(--glass-border)}
+.update-head{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;font-weight:600;line-height:1.35}
+.update-head .ms{font-size:18px}
+.update-box .bar{height:6px}

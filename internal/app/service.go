@@ -45,7 +45,10 @@ type Config struct {
 	DefaultServersDir string
 	DefaultAPIKey     string
 	ExcludeListSource string
-	Version           string
+	Version           string // this build's version, such as v0.2.0; anything else is a development build
+	UpdateRepo        string // GitHub owner/name whose releases hold new versions
+	UpdateAPI         string // GitHub API base; empty means api.github.com (set in tests)
+	ExePath           string // the running executable; empty means os.Executable (set in tests)
 }
 
 // Service is bound to the window; each exported method can be called from
@@ -58,6 +61,8 @@ type Service struct {
 	setupMu     sync.Mutex
 	setupCancel context.CancelFunc // non-nil while a setup runs
 	setupDone   chan struct{}      // closed when the running setup has finished
+
+	update updater
 
 	serversMu sync.Mutex
 	running   map[string]*running // by server ID, while running
@@ -124,9 +129,27 @@ func (s *Service) apiKey() string {
 	return s.cfg.DefaultAPIKey
 }
 
-// PickFolder asks for a folder, starting at start.
+// PickFolder asks for a folder, starting at start or, when start does not
+// exist yet (a new server's folder is only made by setup), the nearest
+// folder above it that does. Windows refuses to open the dialog at a missing
+// folder.
 func (s *Service) PickFolder(start string) (string, error) {
-	return s.ui.PickFolder("", start)
+	return s.ui.PickFolder("", existingDir(start))
+}
+
+// existingDir returns dir or its nearest existing parent, or "" if none exists.
+func existingDir(dir string) string {
+	for dir != "" {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+	return ""
 }
 
 // PickPackFile asks for a modpack archive.
@@ -208,6 +231,22 @@ func (s *Service) SuggestServerDir(name string) string {
 	dir := filepath.Join(base, slug)
 	for i := 2; exists(dir); i++ {
 		dir = filepath.Join(base, fmt.Sprintf("%s %d", slug, i))
+	}
+	return dir
+}
+
+// ServerDirIn returns where a server called name goes when the user picks
+// parent: parent itself when it is empty, or else a new folder named after
+// the pack inside it, so the server's files never mix with other files.
+func (s *Service) ServerDirIn(parent, name string) string {
+	entries, err := os.ReadDir(parent)
+	if err != nil || len(entries) == 0 {
+		return parent
+	}
+	slug := safeFolderName(name)
+	dir := filepath.Join(parent, slug)
+	for i := 2; exists(dir); i++ {
+		dir = filepath.Join(parent, fmt.Sprintf("%s %d", slug, i))
 	}
 	return dir
 }

@@ -49,6 +49,10 @@
     quiet: new Set(),       // servers restarting: no "stopped" toast
     form: null,
     setup: null,
+    props: null,            // Server settings tab: edited values
+    propsSaved: null,       // ... and the values on disk
+    update: null,           // result of the last update check
+    updating: false,
   };
   const srv = () => S.servers.get(S.current);
   const packVars = s => ({mc: s?.mc || '?', loader: loaderName(s?.loader)});
@@ -101,8 +105,9 @@
   function setTab(x){
     S.tab = x;
     $$('[role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === x));
-    ['overview','mods','console'].forEach(k => { $('#p-' + k).hidden = k !== x; });
+    ['overview','mods','props','console'].forEach(k => { $('#p-' + k).hidden = k !== x; });
     if (x === 'mods') loadMods();
+    if (x === 'props') loadProps();
     if (x === 'console') loadLog();
   }
 
@@ -118,7 +123,7 @@
         crashed: `<span class="bad">${esc(t('sideAttention'))}</span>`,
       }[s.state] || '';
       b.innerHTML = `${tileHTML(s.name, s.logoUrl)}<div><div class="t">${esc(s.name)}</div><div class="s">${st}</div></div>`;
-      b.onclick = () => { S.current = s.id; S.mods = []; show('server'); setTab(S.tab); };
+      b.onclick = () => { S.current = s.id; S.mods = []; S.props = S.propsSaved = null; show('server'); setTab(S.tab); };
       list.appendChild(b);
     }
     $('#settingsBtn').setAttribute('aria-current', S.view === 'settings');
@@ -180,7 +185,7 @@
     const on = s.state === 'running';
     $('#cmdIn').disabled = $('#cmdBtn').disabled = !on;
     $('#cmdHint').textContent = t(on ? 'cmdOn' : 'cmdOff');
-    if (s.state !== 'running') $('#restartNote').hidden = true;
+    if (s.state !== 'running'){ $('#restartNote').hidden = true; $('#propsNote').hidden = true; }
   }
 
   function renderAddresses(){
@@ -500,7 +505,13 @@
     try { const p = await api().PickPackFile(); if (p){ $('#packUrl').value = p; lookupPack(); } } catch (err){ toastErr(err); }
   };
   $('#pickDir').onclick = async () => {
-    try { const d = await api().PickFolder(S.form.dir); if (d){ S.form.dir = d; S.form.dirTouched = true; $('#outDir').value = d; validate(); } } catch (err){ toastErr(err); }
+    try {
+      const d = await api().PickFolder(S.form.dir);
+      if (!d) return;
+      const name = (S.form.preview && S.form.preview.name) || 'Minecraft server';
+      S.form.dir = await api().ServerDirIn(d, name);
+      S.form.dirTouched = true; $('#outDir').value = S.form.dir; validate();
+    } catch (err){ toastErr(err); }
   };
   $('#optJava').addEventListener('change', async e => {
     if (e.target.value !== 'pick') return;
@@ -634,7 +645,8 @@
     $('#setJava').checked = st.autoJava;
     $('#setDir').value = st.serversDir || '';
     $('#setKey').value = st.apiKey || '';
-    $('#version').textContent = t('version', {v: S.app.version});
+    $('#setUpdCheck').checked = !st.skipUpdateCheck;
+    $('#verText').textContent = S.update && S.update.dev ? t('versionDev') : t('versionIs', {v: S.app.version});
   }
   async function saveSettings(change){
     Object.assign(S.app.settings, change);
@@ -646,6 +658,8 @@
   }
   $$('[data-theme-set]').forEach(b => b.onclick = () => { applyTheme(b.dataset.themeSet); saveSettings({theme: b.dataset.themeSet}); renderSettings(); });
   $('#setJava').addEventListener('change', e => saveSettings({autoJava: e.target.checked}));
+  $('#setUpdCheck').addEventListener('change', e => saveSettings({skipUpdateCheck: !e.target.checked}));
+  $('#checkUpd').onclick = () => checkUpdate(true);
   $('#setKey').addEventListener('change', e => { saveSettings({apiKey: e.target.value.trim()}); toast(t('toastSaved')); });
   $('#pickSetDir').onclick = async () => {
     try { const d = await api().PickFolder(S.app.settings.serversDir); if (d){ await saveSettings({serversDir: d}); renderSettings(); } } catch (err){ toastErr(err); }
@@ -656,7 +670,8 @@
     saveSettings({language: l});
     applyStatic();
     renderSidebar();
-    if (S.view === 'server'){ renderServer(); if (S.tab === 'mods'){ renderMods(); $('#modUrlHelp').textContent = t('onlyCompatible', packVars(srv())); if (!addPanel.hidden) runSearch(); } }
+    renderUpdate();
+    if (S.view === 'server'){ renderServer(); if (S.tab === 'props') renderProps(); if (S.tab === 'mods'){ renderMods(); $('#modUrlHelp').textContent = t('onlyCompatible', packVars(srv())); if (!addPanel.hidden) runSearch(); } }
     if (S.view === 'new'){ $('#setupBtnTxt').textContent = t(S.form.update ? 'updateBtn' : 'setUp'); renderRAM(); validate();
       const up = S.form.update && S.servers.get(S.form.update);
       $('#newTitle').textContent = up ? t('updateTitle', {name: up.name}) : t('newServer'); $('#newMeta').textContent = up ? t('updateMeta') : t('newMeta'); }
@@ -664,6 +679,111 @@
     if (S.view === 'settings') renderSettings();
   }
   $$('[data-lang-set]').forEach(b => b.onclick = () => setLang(b.dataset.langSet));
+
+  /* ------------------------------------------------ server settings tab */
+  const GAMEMODES = [['survival', 'gmSurvival'], ['creative', 'gmCreative'], ['adventure', 'gmAdventure']];
+  const DIFFICULTIES = [['peaceful', 'dPeaceful'], ['easy', 'dEasy'], ['normal', 'dNormal'], ['hard', 'dHard']];
+
+  async function loadProps(){
+    const s = srv(); if (!s) return;
+    if (S.props && S.props.id === s.id) return renderProps(); // keep unsaved edits
+    try {
+      const p = await api().ServerProperties(s.id);
+      S.propsSaved = {...p}; S.props = {...p, id: s.id};
+      renderProps();
+    } catch (err){ toastErr(err); }
+  }
+  const propsDirty = () => S.props && S.propsSaved && Object.keys(S.propsSaved).some(k => S.props[k] !== S.propsSaved[k]);
+
+  function segHTML(options, value){
+    return options.map(([v, key]) => `<button type="button" role="radio" aria-checked="${v === value}" data-v="${v}">${esc(t(key))}</button>`).join('');
+  }
+  function renderProps(){
+    const p = S.props; if (!p) return;
+    $('#pOnline').checked = p.onlineMode;
+    $('#pOnlineWarn').hidden = p.onlineMode;
+    $('#pMax').value = p.maxPlayers;
+    $('#pFlight').checked = p.allowFlight;
+    $('#pPvp').checked = p.pvp;
+    $('#pMode').innerHTML = segHTML(GAMEMODES, p.gamemode);
+    $('#pDiff').innerHTML = segHTML(DIFFICULTIES, p.difficulty);
+    if (document.activeElement !== $('#pMotd')) $('#pMotd').value = p.motd;
+    $('#pMotdCount').textContent = `${[...p.motd].length}/59`;
+    const dirty = propsDirty();
+    $('#propsSave').disabled = !dirty; $('#propsUndo').disabled = !dirty;
+  }
+  function setProp(k, v){ S.props[k] = v; renderProps(); }
+  $('#pOnline').addEventListener('change', e => setProp('onlineMode', e.target.checked));
+  $('#pFlight').addEventListener('change', e => setProp('allowFlight', e.target.checked));
+  $('#pPvp').addEventListener('change', e => setProp('pvp', e.target.checked));
+  $('#pMotd').addEventListener('input', e => setProp('motd', e.target.value));
+  $('#pMax').addEventListener('change', e => setProp('maxPlayers', Math.max(1, Math.min(1000, parseInt(e.target.value, 10) || 1))));
+  $$('#p-props [data-step]').forEach(b => b.onclick = () => setProp('maxPlayers', Math.max(1, Math.min(1000, S.props.maxPlayers + +b.dataset.step))));
+  $('#pMode').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) setProp('gamemode', b.dataset.v); });
+  $('#pDiff').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) setProp('difficulty', b.dataset.v); });
+  $('#propsUndo').onclick = () => { S.props = {...S.propsSaved, id: S.props.id}; $('#pMotd').value = S.props.motd; renderProps(); };
+  $('#propsFile').onclick = () => api().OpenServerProperties(S.current);
+  $('#propsForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!propsDirty()) return;
+    const {id, ...values} = S.props;
+    $('#propsSave').disabled = true;
+    try {
+      await api().SetServerProperties(id, values);
+      S.propsSaved = {...values};
+      toast(t('toastPropsSaved'));
+      const s = srv();
+      $('#propsNote').hidden = !(s && s.state === 'running');
+    } catch (err){ toastErr(err); }
+    renderProps();
+  });
+
+  /* ------------------------------------------------ AutoPack updates */
+  async function checkUpdate(manual){
+    if (manual){ $('#updStatus').textContent = t('checking'); $('#checkUpd').disabled = true; }
+    try {
+      S.update = await api().CheckForUpdate();
+      if (manual) $('#updStatus').textContent = S.update.dev ? t('versionDev') : S.update.available ? t('updAvailable', {v: S.update.latest}) : t('upToDate');
+    } catch (err){
+      if (manual) $('#updStatus').textContent = errText(parseErr(err));
+    }
+    if (manual) $('#checkUpd').disabled = false;
+    renderUpdate();
+    if (S.view === 'settings') renderSettings();
+  }
+  function renderUpdate(){
+    const u = S.update, box = $('#updBox');
+    box.hidden = !(u && u.available);
+    if (box.hidden) return;
+    if (!S.updating){
+      $('#updText').textContent = t('updAvailable', {v: u.latest});
+      $('#updBar').hidden = true;
+      $('#updBtn').hidden = false; $('#updBtn').disabled = false;
+    }
+  }
+  async function startUpdate(){
+    if (S.updating) return;
+    S.updating = true;
+    $('#updBtn').hidden = true; $('#updBar').hidden = false; $('#updBar').firstElementChild.style.width = '0%';
+    $('#updText').textContent = t('downloading', {p: 0});
+    try {
+      await api().DownloadUpdate();
+      $('#updText').textContent = t('restarting');
+      await win().RestartIntoUpdate();
+    } catch (err){
+      S.updating = false;
+      const e = parseErr(err);
+      toast(errText(e), true);
+      if (e.code === 'update_no_permission' && S.update && S.update.pageUrl) api().OpenURL(S.update.pageUrl);
+      renderUpdate();
+    }
+  }
+  $('#updBtn').onclick = () => {
+    const running = [...S.servers.values()].some(s => s.state === 'running' || s.state === 'starting');
+    if (running){ $('#updDlg').hidden = false; $('#updDlgNo').focus(); } else startUpdate();
+  };
+  $('#updDlgNo').onclick = () => { $('#updDlg').hidden = true; };
+  $('#updDlgYes').onclick = () => { $('#updDlg').hidden = true; startUpdate(); };
 
   /* ------------------------------------------------ server updates */
   function upsert(v){
@@ -711,7 +831,10 @@
     const b = $('#closeStop'); b.disabled = true; b.lastElementChild.textContent = t('stopping');
     win().StopServersAndQuit();
   };
-  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#closeDlg').hidden) $('#closeDlg').hidden = true; });
+  addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    $('#closeDlg').hidden = true; $('#updDlg').hidden = true;
+  });
 
   /* ------------------------------------------------ start */
   async function init(){
@@ -731,6 +854,12 @@
       if (S.view === 'server' && v.id === S.current) renderServer();
     });
     on('server-log', ev => appendLog(ev.id, ev.lines || []));
+    on('update', ev => {
+      const p = ev.total ? Math.floor(ev.done / ev.total * 100) : 0;
+      $('#updBar').firstElementChild.style.width = p + '%';
+      $('#updText').textContent = t('downloading', {p});
+    });
+    if (!S.app.settings.skipUpdateCheck) checkUpdate(false);
     on('files-dropped', paths => {
       if (!paths || !paths.length) return;
       if (S.view === 'new'){ $('#packUrl').value = paths[0]; lookupPack(); return; }
