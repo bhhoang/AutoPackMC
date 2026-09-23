@@ -436,3 +436,18 @@ button.drop:hover{border-color:var(--accent)}
 .prow select.input{width:170px}
 .prow.changed b::after{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:7px;vertical-align:2px}
 @media (max-width:900px){.adv-groups{columns:1}}
+
+/* Server picture and how the server looks in the Multiplayer list */
+.list-preview{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;margin-top:12px}
+.mc-row{display:grid;grid-template-columns:64px minmax(0,1fr);gap:12px;align-items:center;padding:8px;border-radius:12px;background:rgba(8,12,20,.55);border:1px solid var(--glass-border)}
+.mc-icon{width:64px;height:64px;border-radius:6px;display:grid;place-items:center;background:rgba(255,255,255,.06);border:1.5px dashed rgba(255,255,255,.25);color:rgba(255,255,255,.5);overflow:hidden}
+.mc-icon.has{border:0;background:transparent}
+.mc-icon img{width:64px;height:64px;image-rendering:pixelated;display:block}
+.mc-text{min-width:0;display:flex;flex-direction:column;gap:4px}
+.mc-top{display:flex;align-items:baseline;gap:10px}
+.mc-top b{color:#fff;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-count{margin-left:auto;color:#aab4bd;font:500 12.5px var(--font-mono)}
+.mc-motd{color:#aab4bd;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icon-actions{display:flex;flex-direction:column;gap:8px}
+.icon-actions .btn{justify-content:flex-start}
+.list-preview + .help{margin-top:10px}

@@ -122,7 +122,7 @@
         running: `<span class="live">${esc(t('sideOnline'))}</span>${s.players.length ? ', ' + esc(t('sidePlaying', {n: s.players.length})) : ''}`,
         crashed: `<span class="bad">${esc(t('sideAttention'))}</span>`,
       }[s.state] || '';
-      b.innerHTML = `${tileHTML(s.name, s.logoUrl)}<div><div class="t">${esc(s.name)}</div><div class="s">${st}</div></div>`;
+      b.innerHTML = `${tileHTML(s.name, s.icon || s.logoUrl)}<div><div class="t">${esc(s.name)}</div><div class="s">${st}</div></div>`;
       b.onclick = () => { S.current = s.id; S.mods = []; S.props = S.propsSaved = null; show('server'); setTab(S.tab); };
       list.appendChild(b);
     }
@@ -134,7 +134,7 @@
 
   function renderServer(){
     const s = srv(); if (!s) return home();
-    tile($('#hTile'), s.name, s.logoUrl);
+    tile($('#hTile'), s.name, s.icon || s.logoUrl);
     $('#hName').textContent = s.name; $('#hName').title = s.name;
     $('#hMeta').textContent = t('mcWith', packVars(s));
     const card = $('#statusCard'), pill = $('#sPill'), acts = $('#sActions'), extra = $('#sExtra');
@@ -734,6 +734,7 @@
     if (document.activeElement !== $('#pMotd')) $('#pMotd').value = p.motd;
     $('#pMotdCount').textContent = `${[...p.motd].length}/59`;
     $('#pSpawn').value = p.spawnProtection;
+    renderIcon();
     renderAdvanced();
     const dirty = propsDirty();
     $('#propsSave').disabled = !dirty; $('#propsUndo').disabled = !dirty;
@@ -747,6 +748,33 @@
   $$('#p-props [data-step]').forEach(b => b.onclick = () => setProp('maxPlayers', Math.max(1, Math.min(1000, S.props.maxPlayers + +b.dataset.step))));
   $('#pSpawn').addEventListener('change', e => setProp('spawnProtection', Math.max(0, Math.min(100000, parseInt(e.target.value, 10) || 0))));
   $$('#p-props [data-spawn]').forEach(b => b.onclick = () => setProp('spawnProtection', Math.max(0, Math.min(100000, S.props.spawnProtection + +b.dataset.spawn))));
+
+  /* Server picture */
+  function renderIcon(){
+    const s = srv(); if (!s || !S.props) return;
+    const box = $('#pIcon');
+    box.classList.toggle('has', !!s.icon);
+    box.innerHTML = s.icon ? `<img alt="" src="${s.icon}">` : '<span class="ms">image</span>';
+    $('#pvName').textContent = s.name;
+    $('#pvCount').textContent = `${s.players.length}/${S.props.maxPlayers}`;
+    $('#pvMotd').textContent = S.props.motd;
+    $('#iconRemove').hidden = !s.icon;
+    $('#iconLogo').hidden = !s.logoUrl;
+  }
+  async function changeIcon(run, removed){
+    const s = srv(); if (!s) return;
+    try {
+      const url = await run(s.id);
+      if (url === '' && !removed) return; // the user cancelled the dialog
+      s.icon = removed ? '' : url;
+      renderIcon(); renderSidebar(); tile($('#hTile'), s.name, s.icon || s.logoUrl);
+      toast(t(removed ? 'toastIconRemoved' : 'toastIconSaved'));
+      if (s.state === 'running' || s.state === 'starting'){ $('#propsNote').hidden = false; }
+    } catch (err){ toastErr(err); }
+  }
+  $('#iconPick').onclick = () => changeIcon(id => api().PickServerIcon(id));
+  $('#iconLogo').onclick = () => changeIcon(id => api().UseModpackLogoAsIcon(id));
+  $('#iconRemove').onclick = () => changeIcon(id => api().RemoveServerIcon(id).then(() => ''), true);
 
   /* Advanced settings: every other key in server.properties */
   const schemaByKey = Object.fromEntries(PROP_SCHEMA.map(k => [k.key, k]));
@@ -985,6 +1013,11 @@
       if (!paths || !paths.length) return;
       if (S.view === 'new'){ $('#packUrl').value = paths[0]; lookupPack(); return; }
       if (S.view === 'server' && S.tab === 'mods') addJars(paths);
+      if (S.view === 'server' && S.tab === 'props'){
+        const pic = paths.find(p => /\.(png|jpe?g|gif)$/i.test(p));
+        if (pic) changeIcon(id => api().SetServerIconFromFile(id, pic));
+        else toast(t('err_bad_picture'), true);
+      }
     });
     on('close-requested', why => {
       const setup = why && why.setup && !(why.servers > 0);

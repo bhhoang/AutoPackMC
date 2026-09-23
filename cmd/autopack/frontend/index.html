@@ -230,6 +230,21 @@
 
               <div class="card wide">
                 <h3><span class="ms">badge</span><span data-i18n="motdTitle"></span></h3>
+                <div class="list-preview">
+                  <div class="mc-row" aria-hidden="true">
+                    <div class="mc-icon" id="pIcon"><span class="ms">image</span></div>
+                    <div class="mc-text">
+                      <div class="mc-top"><b id="pvName"></b><span class="mc-count num" id="pvCount"></span></div>
+                      <div class="mc-motd" id="pvMotd"></div>
+                    </div>
+                  </div>
+                  <div class="icon-actions">
+                    <button class="btn sm" type="button" id="iconPick"><span class="ms">image</span><span data-i18n="choosePicture"></span></button>
+                    <button class="btn sm" type="button" id="iconLogo"><span class="ms">auto_awesome</span><span data-i18n="useLogo"></span></button>
+                    <button class="btn sm ghost" type="button" id="iconRemove"><span class="ms">delete</span><span data-i18n="removePicture"></span></button>
+                  </div>
+                </div>
+                <p class="help" data-i18n="iconHelp"></p>
                 <div class="field">
                   <label for="pMotd" data-i18n="motdLabel"></label>
                   <input class="input" id="pMotd" maxlength="59" autocomplete="off" aria-describedby="pMotdHelp">

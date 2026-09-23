@@ -42,6 +42,7 @@ type ServerView struct {
 	Loader        string     `json:"loader"`
 	LoaderVersion string     `json:"loaderVersion"`
 	LogoURL       string     `json:"logoUrl"`
+	Icon          string     `json:"icon"` // server-icon.png as a data: URL, when there is one
 	RAMGB         int        `json:"ramGb"`
 	Port          int        `json:"port"`
 	ModsOnServer  int        `json:"modsOnServer"`
@@ -101,6 +102,7 @@ func (s *Service) view(r ServerRecord) ServerView {
 		Players:      []string{},
 		MaxPlayers:   maxPlayers(r.Dir),
 		KeepClient:   r.SkipClean,
+		Icon:         iconDataURL(r.Dir),
 	}
 	if v.RAMGB == 0 {
 		v.RAMGB = defaultRAMGB()
