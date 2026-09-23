@@ -33,7 +33,7 @@ func TestRemoveServerKeepsTheFolder(t *testing.T) {
 	moved := fakeTrash(s, nil)
 	rec := addServer(t, s, "a.jar")
 
-	if err := s.RemoveServer(rec.ID, false); err != nil {
+	if err := s.RemoveServer(rec.ID, FolderKeep); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := s.store.Server(rec.ID); ok {
@@ -52,7 +52,7 @@ func TestRemoveServerMovesTheFolder(t *testing.T) {
 	moved := fakeTrash(s, nil)
 	rec := addServer(t, s, "a.jar")
 
-	if err := s.RemoveServer(rec.ID, true); err != nil {
+	if err := s.RemoveServer(rec.ID, FolderTrash); err != nil {
 		t.Fatal(err)
 	}
 	if len(*moved) != 1 || !samePath((*moved)[0], rec.Dir) {
@@ -69,7 +69,7 @@ func TestRemoveServerWhileRunning(t *testing.T) {
 	rec := addServer(t, s)
 	s.running[rec.ID] = &running{}
 
-	wantCode(t, s.RemoveServer(rec.ID, true), "stop_first")
+	wantCode(t, s.RemoveServer(rec.ID, FolderTrash), "stop_first")
 	if _, ok := s.store.Server(rec.ID); !ok {
 		t.Fatal("running server was removed")
 	}
@@ -108,7 +108,7 @@ func TestRemoveServerRefusesFoldersThatAreNotServers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantCode(t, s.RemoveServer(rec.ID, true), "not_server_folder")
+			wantCode(t, s.RemoveServer(rec.ID, FolderTrash), "not_server_folder")
 			if _, ok := s.store.Server(rec.ID); !ok {
 				t.Fatal("server was removed from the list")
 			}
@@ -116,7 +116,7 @@ func TestRemoveServerRefusesFoldersThatAreNotServers(t *testing.T) {
 				t.Fatalf("moved %v", *moved)
 			}
 			// Taking it off the list alone is still fine.
-			if err := s.RemoveServer(rec.ID, false); err != nil {
+			if err := s.RemoveServer(rec.ID, FolderKeep); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -128,7 +128,7 @@ func TestRemoveServerKeepsItListedWhenTheMoveFails(t *testing.T) {
 	fakeTrash(s, &Error{Code: "trash_cancelled"})
 	rec := addServer(t, s, "a.jar")
 
-	wantCode(t, s.RemoveServer(rec.ID, true), "trash_cancelled")
+	wantCode(t, s.RemoveServer(rec.ID, FolderTrash), "trash_cancelled")
 	if _, ok := s.store.Server(rec.ID); !ok {
 		t.Fatal("server was removed although its folder was not")
 	}
@@ -141,7 +141,7 @@ func TestRemoveServerWithAMissingFolder(t *testing.T) {
 	if err := os.RemoveAll(rec.Dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RemoveServer(rec.ID, true); err != nil {
+	if err := s.RemoveServer(rec.ID, FolderTrash); err != nil {
 		t.Fatal(err)
 	}
 	if len(*moved) != 0 {
@@ -154,4 +154,51 @@ func TestStartServerWhileBeingRemoved(t *testing.T) {
 	rec := addServer(t, s)
 	s.removing[rec.ID] = true
 	wantCode(t, s.StartServer(rec.ID), "no_server")
+}
+
+func TestRemoveServerDeletesTheFolder(t *testing.T) {
+	s, _ := newTestService(t)
+	moved := fakeTrash(s, nil)
+	rec := addServer(t, s, "a.jar")
+	locked := filepath.Join(rec.Dir, "world", "level.dat")
+	writeFile(t, locked, "world")
+	if err := os.Chmod(locked, 0o444); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.RemoveServer(rec.ID, FolderDelete); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(rec.Dir); !os.IsNotExist(err) {
+		t.Fatalf("folder still there: %v", err)
+	}
+	if len(*moved) != 0 {
+		t.Fatalf("went to the Recycle Bin: %v", *moved)
+	}
+	if _, ok := s.store.Server(rec.ID); ok {
+		t.Fatal("server still listed")
+	}
+}
+
+func TestRemoveServerNeverDeletesAFolderThatIsNotAServer(t *testing.T) {
+	s, _ := newTestService(t)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "photos", "cat.jpg"), "mine")
+	rec, err := s.store.UpdateServer("odd", func(r *ServerRecord) { r.Name, r.Dir = "Odd", dir })
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, s.RemoveServer(rec.ID, FolderDelete), "not_server_folder")
+	if _, err := os.Stat(filepath.Join(dir, "photos", "cat.jpg")); err != nil {
+		t.Fatalf("files were deleted: %v", err)
+	}
+}
+
+func TestRemoveServerRejectsUnknownFolderChoice(t *testing.T) {
+	s, _ := newTestService(t)
+	rec := addServer(t, s)
+	wantCode(t, s.RemoveServer(rec.ID, "shred"), "bad_request")
+	if _, ok := s.store.Server(rec.ID); !ok {
+		t.Fatal("server was removed")
+	}
 }

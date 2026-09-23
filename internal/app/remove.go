@@ -7,11 +7,21 @@ import (
 	"strings"
 )
 
-// RemoveServer takes the server off the list. With moveFolder it also moves
-// the server's folder (world, mods, settings) to the Recycle Bin, so it can
-// still be restored from there. A running server must be stopped first, and
-// a folder that does not look like a server folder is never moved.
-func (s *Service) RemoveServer(id string, moveFolder bool) error {
+// What RemoveServer does with the server's folder.
+const (
+	FolderKeep   = "keep"   // leave it where it is
+	FolderTrash  = "trash"  // move it to the Recycle Bin, where it can be restored
+	FolderDelete = "delete" // delete it for good
+)
+
+// RemoveServer takes the server off the list, and keeps, moves to the
+// Recycle Bin or deletes its folder (world, mods, settings) as folder says.
+// A running server must be stopped first, and a folder that does not look
+// like this server's own folder is never moved or deleted.
+func (s *Service) RemoveServer(id, folder string) error {
+	if folder != FolderKeep && folder != FolderTrash && folder != FolderDelete {
+		return &Error{Code: "bad_request", Detail: "folder: " + folder}
+	}
 	rec, ok := s.store.Server(id)
 	if !ok {
 		return &Error{Code: "no_server"}
@@ -38,12 +48,19 @@ func (s *Service) RemoveServer(id string, moveFolder bool) error {
 		s.serversMu.Unlock()
 	}()
 
-	if moveFolder {
+	if folder != FolderKeep {
 		if _, err := os.Stat(rec.Dir); err == nil {
 			if !s.safeToMove(rec) {
 				return &Error{Code: "not_server_folder", Detail: rec.Dir}
 			}
-			if err := s.trash(rec.Dir); err != nil {
+			if folder == FolderTrash {
+				err = s.trash(rec.Dir)
+			} else {
+				err = deleteFolder(rec.Dir)
+			}
+			if err != nil {
+				// A delete that stopped part way leaves some files; the server
+				// stays listed so the user can see where they are.
 				return userError(err)
 			}
 		}
@@ -58,7 +75,25 @@ func (s *Service) RemoveServer(id string, moveFolder bool) error {
 	return nil
 }
 
-// safeToMove reports whether rec's folder can go to the Recycle Bin: it has
+// deleteFolder deletes dir and everything in it. Read-only files, which
+// Windows refuses to delete, are made writable first.
+func deleteFolder(dir string) error {
+	if err := os.RemoveAll(dir); err == nil {
+		return nil
+	}
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err == nil {
+			_ = os.Chmod(path, 0o777)
+		}
+		return nil
+	})
+	if err := os.RemoveAll(dir); err != nil {
+		return &Error{Code: "delete_failed", Detail: err.Error()}
+	}
+	return nil
+}
+
+// safeToMove reports whether rec's folder can be moved or deleted: it has
 // to look like a Minecraft server, and must not be a drive, the user's home,
 // the folder new servers go into, or a folder that holds another server.
 func (s *Service) safeToMove(rec ServerRecord) bool {

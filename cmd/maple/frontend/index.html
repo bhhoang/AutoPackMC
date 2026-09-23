@@ -550,13 +550,16 @@
   <div class="modal glass" role="alertdialog" aria-modal="true" aria-labelledby="rmDlgTitle" aria-describedby="rmDlgText">
     <h2 id="rmDlgTitle"></h2>
     <p class="lead" id="rmDlgText" data-i18n="rmDlgText"></p>
-    <label class="check" for="rmFolder">
-      <input type="checkbox" id="rmFolder">
-      <span><b data-i18n="rmFolder"></b><span class="help" id="rmFolderHelp"></span></span>
-    </label>
+    <fieldset class="rm-choice">
+      <legend data-i18n="rmFolderLegend"></legend>
+      <label class="check"><input type="radio" name="rmFolder" value="keep"><span><b data-i18n="rmKeep"></b><span class="help" data-i18n="rmKeepHelp"></span></span></label>
+      <label class="check"><input type="radio" name="rmFolder" value="trash"><span><b data-i18n="rmTrash"></b><span class="help" data-i18n="rmTrashHelp"></span></span></label>
+      <label class="check danger"><input type="radio" name="rmFolder" value="delete"><span><b data-i18n="rmDelete"></b><span class="help" data-i18n="rmDeleteHelp"></span></span></label>
+    </fieldset>
+    <p class="help rm-path" id="rmPath"></p>
     <div class="row">
       <button class="btn" type="button" id="rmNo" data-i18n="cancel"></button>
-      <button class="btn danger" type="button" id="rmYes"><span class="ms">delete</span><span data-i18n="rmYes"></span></button>
+      <button class="btn danger" type="button" id="rmYes"><span class="ms">delete</span><span id="rmYesTxt"></span></button>
     </div>
   </div>
 </div>

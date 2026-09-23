@@ -1149,22 +1149,30 @@
   });
 
   /* ------------------------------------------------ remove a server */
-  // Asks first; the folder stays unless the user ticks the box, and then it
-  // goes to the Recycle Bin, never straight to deletion.
+  // Asks first. The folder stays unless the user picks the Recycle Bin or
+  // permanent deletion; the button says so when it deletes for good.
   $('#rmBtn').onclick = () => openRemove(S.current);
   function openRemove(id){
     const s = S.servers.get(id); if (!s) return;
     S.rmId = id;
     if (s.state === 'running' || s.state === 'starting' || S.stopping.has(s.id)) return toast(t('rmStopFirst'), true);
     $('#rmDlgTitle').textContent = t('rmDlgTitle', {name: s.name});
-    $('#rmFolderHelp').textContent = t('rmFolderHelp', {dir: s.dir});
-    $('#rmFolder').checked = false;
+    $('#rmPath').textContent = t('rmPath', {dir: s.dir});
+    $('#rmDlg input[value=keep]').checked = true;
+    rmChoiceChanged();
     $('#rmDlg').hidden = false; Motion.pop($('#rmDlg .modal')); $('#rmNo').focus();
   }
+  const rmChoice = () => $('#rmDlg input[name=rmFolder]:checked').value;
+  function rmChoiceChanged(){
+    const del = rmChoice() === 'delete';
+    $('#rmYesTxt').textContent = t(del ? 'rmYesDelete' : 'rmYes');
+    $('#rmYes').classList.toggle('solid', del);
+  }
+  $$('#rmDlg input[name=rmFolder]').forEach(r => r.addEventListener('change', rmChoiceChanged));
   $('#rmNo').onclick = () => { $('#rmDlg').hidden = true; };
   $('#rmYes').onclick = async () => {
     const s = S.servers.get(S.rmId); if (!s) return;
-    const folder = $('#rmFolder').checked, btn = $('#rmYes');
+    const folder = rmChoice(), btn = $('#rmYes');
     btn.disabled = true;
     try {
       await api().RemoveServer(s.id, folder);
@@ -1175,7 +1183,7 @@
       S.modsFor = null; S.props = S.propsSaved = null;
       home();
       if (S.view === 'server') setTab('overview');
-      toast(t(folder ? 'toastServerTrashed' : 'toastServerRemoved', {name: s.name}));
+      toast(t({keep: 'toastServerRemoved', trash: 'toastServerTrashed', delete: 'toastServerDeleted'}[folder], {name: s.name}));
     } catch (err){
       toastErr(err);
     } finally {
