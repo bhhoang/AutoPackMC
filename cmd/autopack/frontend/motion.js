@@ -128,33 +128,53 @@
     const item = [...container.querySelectorAll(L.itemSelector)].find(L.isActive);
     if (!item || item.offsetParent === null){ lens.style.opacity = '0'; L.rect = null; return; }
     const r = {x: item.offsetLeft, y: item.offsetTop, w: item.offsetWidth, h: item.offsetHeight};
-    const radius = parseFloat(getComputedStyle(item).borderTopLeftRadius) || 12;
     const prev = L.rect;
+    const same = prev && prev.x === r.x && prev.y === r.y && prev.w === r.w && prev.h === r.h;
     L.rect = r;
     lens.style.opacity = '1';
+    if (same) return; // nothing moved; let any travel finish
+    const radius = parseFloat(getComputedStyle(item).borderTopLeftRadius) || 12;
     lens.style.width = r.w + 'px';
     lens.style.height = r.h + 'px';
     lens.style.borderRadius = radius + 'px';
     lens.style.transform = `translate(${r.x}px, ${r.y}px)`;
     const id = lensFilter(r.w, r.h, radius);
-    lens.style.setProperty('--lens-filter', `url(#${id})`);
 
-    if (!animate || !prev || !on() || (prev.x === r.x && prev.y === r.y && prev.w === r.w)) return;
-    // Travel with a stretch: halfway, the drop spans part of both spots and
-    // thins a little; then it springs into its new shape.
+    if (!animate || !prev || same || !on()){
+      if (L.anim){ L.anim.cancel(); L.anim = null; }
+      lens.style.setProperty('--lens-filter', `url(#${id})`);
+      return;
+    }
+    // The lens keeps its final size and only moves and scales, which the
+    // compositor does without laying the page out again. It leaves quickly,
+    // stretches a little along the way, never passes its target, and
+    // settles with a small squash, like a drop.
     const horizontal = Math.abs(r.x - prev.x) >= Math.abs(r.y - prev.y);
-    const mid = horizontal
-      ? {x: Math.min(prev.x, r.x) + Math.abs(r.x - prev.x) * .18, y: r.y, w: Math.abs(r.x - prev.x) * .64 + (prev.w + r.w) / 2, h: r.h * .9}
-      : {x: r.x, y: Math.min(prev.y, r.y) + Math.abs(r.y - prev.y) * .18, w: r.w * .96, h: Math.abs(r.y - prev.y) * .64 + (prev.h + r.h) / 2};
-    const frame = q => ({transform: `translate(${q.x}px, ${q.y + (horizontal ? (r.h - q.h) / 2 : 0)}px)`, width: q.w + 'px', height: q.h + 'px'});
-    // The refraction map fits only the resting shape, so the lens travels
-    // as plain frost and bends light again once it lands.
-    lens.style.setProperty('--lens-filter', 'blur(1px)');
-    if (L.anim) L.anim.cancel();
-    L.anim = lens.animate([frame(prev), {...frame(mid), offset: .42}, frame(r)], {
-      duration: ms(520), easing: 'cubic-bezier(.25,1.25,.45,1)',
+    const d = horizontal ? Math.abs(r.x - prev.x) : Math.abs(r.y - prev.y);
+    const frame = (q, sx = 1, sy = 1) => ({
+      transform: `translate(${q.x}px, ${q.y}px) scale(${(q.w / r.w) * sx}, ${(q.h / r.h) * sy})`,
     });
-    L.anim.finished.then(() => { if (L.rect === r) lens.style.setProperty('--lens-filter', `url(#${id})`); }, () => {});
+    const mid = {x: prev.x + (r.x - prev.x) * .55, y: prev.y + (r.y - prev.y) * .55, w: (prev.w + r.w) / 2, h: (prev.h + r.h) / 2};
+    const stretch = 1 + Math.min(.22, d / (r.w * 4 || 1));
+    const midF = horizontal ? frame(mid, stretch, 1 / Math.sqrt(stretch)) : frame(mid, 1 / Math.sqrt(stretch), stretch);
+    // Keep the stretched frame centred on its spot.
+    const land = horizontal ? {x: r.x - r.w * .015, y: r.y + r.h * .02, w: r.w, h: r.h} : {x: r.x + r.w * .02, y: r.y - r.h * .015, w: r.w, h: r.h};
+    // The refraction map fits only the resting shape, so the lens travels
+    // as clear glass and bends light again once it lands.
+    lens.style.setProperty('--lens-filter', 'blur(0)');
+    if (L.anim) L.anim.cancel();
+    const anim = L.anim = lens.animate([
+      {...frame(prev), easing: 'cubic-bezier(.4,0,.6,1)'},
+      {...midF, offset: .45, easing: 'cubic-bezier(.2,.8,.3,1)'},
+      {...(horizontal ? frame(land, 1.03, .96) : frame(land, .96, 1.03)), offset: .8, easing: 'ease-out'},
+      frame(r),
+    ], {duration: ms(440)});
+    lens.style.transformOrigin = '0 0';
+    anim.finished.then(() => {
+      if (L.anim !== anim) return;
+      L.anim = null;
+      lens.style.setProperty('--lens-filter', `url(#${id})`);
+    }, () => {});
   }
 
   function refresh(animate = true){ lenses.forEach(L => place(L, animate)); }

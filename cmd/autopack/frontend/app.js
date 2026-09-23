@@ -823,7 +823,11 @@
     const s = srv(); if (!s || !S.props) return;
     const box = $('#pIcon');
     box.classList.toggle('has', !!s.icon);
-    box.innerHTML = s.icon ? `<img alt="" src="${s.icon}">` : '<span class="ms">image</span>';
+    // Only rebuild the picture when it changes, not on every settings edit.
+    if (box.dataset.src !== (s.icon || '')){
+      box.dataset.src = s.icon || '';
+      box.innerHTML = s.icon ? `<img alt="" src="${s.icon}">` : '<span class="ms">image</span>';
+    }
     $('#pvName').textContent = s.name;
     $('#pvCount').textContent = `${s.players.length}/${S.props.maxPlayers}`;
     $('#pvCountWrap').title = t('playerCountTip', {n: s.players.length, max: S.props.maxPlayers});
