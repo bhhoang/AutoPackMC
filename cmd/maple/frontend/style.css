@@ -465,19 +465,24 @@ button.drop:hover{border-color:var(--accent)}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--lens-top:rgba(255,255,255,.30);--lens-mid:rgba(255,255,255,.07);--lens-bottom:rgba(255,255,255,.16)}}
 :root[data-theme="dark"]{--lens-top:rgba(255,255,255,.30);--lens-mid:rgba(255,255,255,.07);--lens-bottom:rgba(255,255,255,.16)}
 
-/* Buttons: spring back when released; a soft light follows the pointer. */
+/* Buttons: spring back when released; a soft light follows the pointer.
+   The light fades by animating --lit, which is only repainted: fading its
+   opacity instead gave it a compositing layer of its own for the length of
+   the fade, and adding and dropping that layer made the frosted glass
+   behind flicker on some graphics drivers. */
+@property --lit{syntax:"<number>";inherits:false;initial-value:0}
 .btn{position:relative;overflow:hidden;transition:transform calc(460ms * var(--anim)) cubic-bezier(.34,1.56,.64,1),background-color calc(200ms * var(--anim)),box-shadow calc(200ms * var(--anim)),border-color calc(200ms * var(--anim))}
-.btn::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity calc(260ms * var(--anim));
-  background:radial-gradient(120px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.22),transparent 60%)}
-.btn.lit::after{opacity:1}
-.btn.primary::after{background:radial-gradient(120px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.38),transparent 60%)}
+.btn::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;--glow:.22;transition:--lit calc(260ms * var(--anim));
+  background:radial-gradient(120px circle at var(--mx,50%) var(--my,50%),rgb(255 255 255 / calc(var(--glow) * var(--lit))),transparent 60%)}
+.btn.lit::after{--lit:1}
+.btn.primary::after{--glow:.38}
 
 /* Cards: a specular highlight where the pointer is, and a darker lower rim,
    so the glass reads as a thick pane lit from above. */
 .card{box-shadow:inset 0 1px 0 var(--glass-hi),inset 0 -1px 0 rgba(0,0,0,.14),0 8px 24px var(--shadow)}
-.card::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity calc(360ms * var(--anim));
-  background:radial-gradient(380px circle at var(--mx,50%) var(--my,0%),rgba(255,255,255,.09),transparent 50%)}
-.card.lit::after{opacity:1}
+.card::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;transition:--lit calc(360ms * var(--anim));
+  background:radial-gradient(380px circle at var(--mx,50%) var(--my,0%),rgb(255 255 255 / calc(.09 * var(--lit))),transparent 50%)}
+.card.lit::after{--lit:1}
 
 /* Frost: a very fine grain over the whole window, fixed so it costs nothing
    while scrolling. */
@@ -600,10 +605,10 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 .srv-row{position:relative}
 .srv-row .srv{padding-right:40px}
 .srv-more{position:absolute;right:6px;top:50%;width:30px;height:30px;margin-top:-15px;display:grid;place-items:center;border:0;border-radius:9px;
-  background:transparent;color:var(--text-2);cursor:pointer;opacity:0;transition:opacity calc(160ms * var(--anim)),background calc(160ms * var(--anim))}
+  background:transparent;color:transparent;cursor:pointer;transition:color calc(160ms * var(--anim)),background calc(160ms * var(--anim))}
 .srv-more .ms{font-size:20px}
 .srv-row:hover .srv-more,.srv-row:focus-within .srv-more,.srv-more[aria-expanded="true"],
-.srv-row .srv[aria-current="true"] + .srv-more{opacity:1}
+.srv-row .srv[aria-current="true"] + .srv-more{color:var(--text-2)}
 .srv-more:hover,.srv-more[aria-expanded="true"]{background:var(--glass-soft);color:var(--text)}
 .srv-more:focus-visible{outline:2.5px solid var(--focus);outline-offset:1px}
 /* The lens now sits under the row, so the open server itself stays clear. */
