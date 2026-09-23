@@ -4,6 +4,7 @@ package app
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -29,4 +30,16 @@ func systemMemoryGB() int {
 		}
 	}
 	return 0
+}
+
+// moveToRecycleBin is only available on Windows, the one system the desktop
+// app is built for.
+func moveToRecycleBin(dir string) error {
+	return errors.New("moving a folder to the Recycle Bin needs Windows")
+}
+
+// moveAcrossDrives is only needed where os.Rename cannot move a folder,
+// which on Windows is between drives.
+func moveAcrossDrives(from, to string) error {
+	return errors.New("cannot move " + from + " to " + to)
 }

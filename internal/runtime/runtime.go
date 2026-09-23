@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
-	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/bhhoang/Maple/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/utils"
 )
 
 // defaultRAM is the max heap used when neither --ram nor the server's

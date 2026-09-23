@@ -1,6 +1,7 @@
 
 /*
-  Web glassmorphism: backdrop-filter + translucent fills + inner highlight edge.
+  Web glassmorphism: a pre-blurred landscape under translucent fills, with an
+  inner highlight edge. No backdrop-filter: see --frost-layer below.
   Radius rule: window 22px, cards 18px, controls 12px, pills/chips fully round.
   Built to be dropped into a Wails (WebView2) frameless window.
 */
@@ -64,11 +65,11 @@ button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:2.5px solid var(--focus);outline-offset:2px}
 
 /* ---------- glass primitives ---------- */
-.glass{background:var(--glass-window);-webkit-backdrop-filter:blur(28px) saturate(170%);backdrop-filter:blur(28px) saturate(170%);border:1px solid var(--glass-border);box-shadow:inset 0 1px 0 var(--glass-hi),0 30px 80px var(--shadow)}
+.glass{background:linear-gradient(var(--glass-window),var(--glass-window)),var(--frost-layer);border:1px solid var(--glass-border);box-shadow:inset 0 1px 0 var(--glass-hi),0 30px 80px var(--shadow)}
 .card{position:relative;background:var(--glass-card);border:1px solid var(--glass-border);border-radius:18px;box-shadow:inset 0 1px 0 var(--glass-hi),0 8px 24px var(--shadow);padding:20px}
 .card::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(135deg,rgba(255,255,255,.22),transparent 45%)}
 @media (prefers-reduced-transparency: reduce){
-  .glass{background:var(--solid);-webkit-backdrop-filter:none;backdrop-filter:none}
+  .glass{background:var(--solid)}
   .card{background:var(--solid)}
 }
 
@@ -377,13 +378,7 @@ button.drop:hover{border-color:var(--accent)}
 .addr .link{font-family:var(--font-body);font-size:14.5px}
 /* In the app the window fills the screen, so the panels are the glass and
    the landscape shows between them. */
-.window.glass{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
-.titlebar,.side{-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);background:var(--glass-window)}
-.card,details.adv,.tabs,.chip,.notice{-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%)}
-.card .card{-webkit-backdrop-filter:none;backdrop-filter:none}
-@media (prefers-reduced-transparency: reduce){
-  .titlebar,.side,.card,details.adv,.tabs,.chip,.notice{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--solid)}
-}
+.window.glass{background:transparent}
 
 /* Server settings tab */
 .props-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -465,34 +460,31 @@ button.drop:hover{border-color:var(--accent)}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--lens-top:rgba(255,255,255,.30);--lens-mid:rgba(255,255,255,.07);--lens-bottom:rgba(255,255,255,.16)}}
 :root[data-theme="dark"]{--lens-top:rgba(255,255,255,.30);--lens-mid:rgba(255,255,255,.07);--lens-bottom:rgba(255,255,255,.16)}
 
-/* Buttons: spring back when released; a soft light follows the pointer. */
+/* Buttons: spring back when released; a soft light follows the pointer.
+   The light fades by animating --lit, which is only repainted: fading its
+   opacity instead gave it a compositing layer of its own for the length of
+   the fade, and adding and dropping that layer made the frosted glass
+   behind flicker on some graphics drivers. */
+@property --lit{syntax:"<number>";inherits:false;initial-value:0}
 .btn{position:relative;overflow:hidden;transition:transform calc(460ms * var(--anim)) cubic-bezier(.34,1.56,.64,1),background-color calc(200ms * var(--anim)),box-shadow calc(200ms * var(--anim)),border-color calc(200ms * var(--anim))}
-.btn::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity calc(260ms * var(--anim));
-  background:radial-gradient(120px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.22),transparent 60%)}
-.btn.lit::after{opacity:1}
-.btn.primary::after{background:radial-gradient(120px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.38),transparent 60%)}
+.btn::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;--glow:.22;transition:--lit calc(260ms * var(--anim));
+  background:radial-gradient(120px circle at var(--mx,50%) var(--my,50%),rgb(255 255 255 / calc(var(--glow) * var(--lit))),transparent 60%)}
+.btn.lit::after{--lit:1}
+.btn.primary::after{--glow:.38}
 
 /* Cards: a specular highlight where the pointer is, and a darker lower rim,
    so the glass reads as a thick pane lit from above. */
 .card{box-shadow:inset 0 1px 0 var(--glass-hi),inset 0 -1px 0 rgba(0,0,0,.14),0 8px 24px var(--shadow)}
-.card::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity calc(360ms * var(--anim));
-  background:radial-gradient(380px circle at var(--mx,50%) var(--my,0%),rgba(255,255,255,.09),transparent 50%)}
-.card.lit::after{opacity:1}
+.card::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;transition:--lit calc(360ms * var(--anim));
+  background:radial-gradient(380px circle at var(--mx,50%) var(--my,0%),rgb(255 255 255 / calc(.09 * var(--lit))),transparent 50%)}
+.card.lit::after{--lit:1}
 
-/* Frost: a very fine grain over the whole window, fixed so it costs nothing
-   while scrolling. */
-body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
-
-/* Liquid lens: a glass drop under the active item of a group. It bends the
-   backdrop at its rim (an SVG displacement map, one per size) and spreads
-   the colours a little, as thick glass does. */
+/* Liquid lens: a glass drop under the active item of a group, painted as a
+   thick pane with a bright top rim and a darker lower edge. */
 .has-lens{position:relative;isolation:isolate}
 .has-lens > :not(.lens){position:relative;z-index:1}
-.lens{--lens-filter:blur(0);position:absolute;left:0;top:0;z-index:0;pointer-events:none;will-change:transform,width;
+.lens{position:absolute;left:0;top:0;z-index:0;pointer-events:none;will-change:transform;
   background:linear-gradient(180deg,var(--lens-top),var(--lens-mid) 52%,var(--lens-bottom));
-  -webkit-backdrop-filter:var(--lens-filter) saturate(1.7) brightness(1.1);
-  backdrop-filter:var(--lens-filter) saturate(1.7) brightness(1.1);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.8),inset 0 -1px 1px rgba(0,0,0,.2),inset 0 0 0 1px rgba(255,255,255,.2),
     inset 0 -10px 14px -12px rgba(255,255,255,.45),0 6px 16px -6px var(--shadow);
   transition:opacity calc(200ms * var(--anim))}
@@ -504,8 +496,7 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 .has-lens > [aria-selected="true"],.has-lens > [aria-pressed="true"],.has-lens > [aria-checked="true"],.has-lens > [aria-current="true"]{
   background:transparent!important;box-shadow:none!important;border-color:transparent!important}
 @media (prefers-reduced-transparency: reduce){
-  .lens{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--glass-card)}
-  body::after{display:none}
+  .lens{background:var(--glass-card)}
 }
 
 /* Switches: the knob stretches while pressed and springs across. */
@@ -513,10 +504,9 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 .switch input:active + i::after{width:28px}
 .switch input:checked:active + i::after{transform:translateX(12px)}
 
-/* Dialogs: the backdrop frosts over while the panel grows in. */
+/* Dialogs: the page dims while the panel grows in. */
 .modal-back:not([hidden]){animation:backdrop-in calc(260ms * var(--anim)) ease-out}
-@keyframes backdrop-in{from{background:rgba(6,12,24,0);-webkit-backdrop-filter:blur(0);backdrop-filter:blur(0)}}
-.modal-back{-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+@keyframes backdrop-in{from{background:rgba(6,12,24,0)}}
 
 /* The toast rises out of the glass. */
 .toast{filter:blur(6px)}
@@ -535,3 +525,109 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 .mods .mod.card{background:color-mix(in srgb,var(--solid) 66%,transparent);content-visibility:auto;contain-intrinsic-size:auto 66px}
 .mod-sk{height:66px;border-radius:18px}
 .mods .mod.card{box-shadow:inset 0 1px 0 var(--glass-hi),0 2px 6px var(--shadow)}
+
+/* Option groups with a lens are one track the lens slides along: the
+   options have no frames of their own, so none show through the glass. */
+.opt-seg.has-lens,.theme-seg.has-lens{gap:3px;padding:4px;border-radius:15px;border:1.5px solid var(--field-border);background:var(--field)}
+.opt-seg.has-lens > button,.theme-seg.has-lens > button{border-color:transparent;background:transparent;border-radius:11px}
+.opt-seg.has-lens > button{height:36px}
+.theme-seg.has-lens > button{height:40px}
+.opt-seg.has-lens > button:hover,.theme-seg.has-lens > button:hover{background:var(--glass-soft)}
+.lens{will-change:transform;transform-origin:0 0}
+
+/* Switches: the knob stretches while pressed and slides across with a
+   soft landing that stays inside the track; the colour moves with it. */
+.switch i{transition:background calc(300ms * var(--anim)) cubic-bezier(.3,.7,.2,1)}
+.switch i::after{transition:transform calc(340ms * var(--anim)) cubic-bezier(.3,1.25,.4,1),width calc(200ms * var(--anim)) cubic-bezier(.3,.7,.2,1);will-change:transform}
+
+.switch input:active + i::after{width:27px}
+.switch input:checked:active + i::after{transform:translateX(12px)}
+
+/* Settings: glass effects */
+.fx-row{display:flex;align-items:center;gap:14px;margin-top:16px}
+.fx-row .theme-seg{flex:1;margin-top:0}
+#fxHelp{margin-top:8px}
+
+/* The light look, for PCs that draw the frosted glass slowly: solid
+   panels, no blur or refraction, no grain. */
+[data-effects="light"] *,[data-effects="light"] *::before,[data-effects="light"] *::after{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+[data-effects="light"] .glass,[data-effects="light"] .titlebar,[data-effects="light"] .side,[data-effects="light"] .card,
+[data-effects="light"] details.adv,[data-effects="light"] .tabs,[data-effects="light"] .chip,[data-effects="light"] .modal{background:var(--solid)}
+[data-effects="light"] .mods .mod.card{background:var(--solid)}
+[data-effects="light"] .lens{background:var(--glass-card)}
+
+/* The subtitle beside the app's name says what it is. */
+.titlebar .sub{font-size:12.5px;font-weight:500;color:var(--text-3);white-space:nowrap}
+.titlebar .sub::before{content:"·";margin:0 7px 0 1px;color:var(--text-3)}
+
+/* Removing a server: a quiet red button, never the page's main action. */
+.btn.danger{background:var(--danger-soft);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,transparent)}
+.btn.danger:hover{background:color-mix(in srgb,var(--danger) 20%,transparent)}
+.rm-card{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:16px}
+.rm-card h3 .ms{color:var(--danger)}
+.rm-card .help{margin-top:6px}
+.rm-card .btn{flex:none}
+#rmDlg .check span{display:flex;flex-direction:column;gap:4px}
+#rmDlg .check .help{overflow-wrap:anywhere}
+
+/* Right-click menu for a server in the list. */
+.ctx{position:fixed;z-index:30;min-width:232px;max-width:300px;padding:6px;border-radius:14px;display:flex;flex-direction:column;gap:1px;
+  box-shadow:inset 0 1px 0 var(--glass-hi),0 18px 44px var(--shadow)}
+.ctx[hidden]{display:none}
+.ctx [role=menuitem]{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:9px;background:transparent;
+  color:var(--text);font:inherit;font-size:13.5px;font-weight:600;text-align:left;cursor:pointer}
+.ctx [role=menuitem] .ms{font-size:19px;color:var(--text-2)}
+.ctx [role=menuitem]:hover:not(:disabled),.ctx [role=menuitem]:focus-visible{background:var(--glass-soft);outline:none}
+.ctx [role=menuitem]:focus-visible{box-shadow:inset 0 0 0 2px var(--focus)}
+.ctx [role=menuitem]:disabled{opacity:.45;cursor:default}
+.ctx .danger,.ctx .danger .ms{color:var(--danger)}
+.ctx .sep{height:1px;margin:4px 8px;background:var(--glass-border)}
+#renDlg .field{display:flex;flex-direction:column;gap:6px}
+
+/* A server row: the server, and a ⋯ button that opens its menu. It shows on
+   hover or keyboard focus, and always on the open server. */
+.srv-row{position:relative}
+.srv-row .srv{padding-right:40px}
+.srv-more{position:absolute;right:6px;top:50%;width:30px;height:30px;margin-top:-15px;display:grid;place-items:center;border:0;border-radius:9px;
+  background:transparent;color:transparent;cursor:pointer;transition:color calc(160ms * var(--anim)),background calc(160ms * var(--anim))}
+.srv-more .ms{font-size:20px}
+.srv-row:hover .srv-more,.srv-row:focus-within .srv-more,.srv-more[aria-expanded="true"],
+.srv-row .srv[aria-current="true"] + .srv-more{color:var(--text-2)}
+.srv-more:hover,.srv-more[aria-expanded="true"]{background:var(--glass-soft);color:var(--text)}
+.srv-more:focus-visible{outline:2.5px solid var(--focus);outline-offset:1px}
+/* The lens now sits under the row, so the open server itself stays clear. */
+.has-lens > .srv-row > .srv[aria-current="true"]{background:transparent!important;box-shadow:none!important;border-color:transparent!important}
+
+/* Frosted glass. The landscape behind the panels never moves, so scene.js
+   blurs it once, adds a fine grain, and sets --frost-layer to that image,
+   fixed to the window: a panel showing it under its tint looks like frosted
+   glass over the landscape. Live backdrop-filter did the same but made some
+   graphics drivers flicker. Until the image is ready the panels are solid.
+   Panels inside panels keep only their tint, as before. */
+:root{--frost-layer:linear-gradient(var(--solid),var(--solid))}
+.titlebar,.side{background:linear-gradient(var(--glass-window),var(--glass-window)),var(--frost-layer)}
+.card{background:linear-gradient(var(--glass-card),var(--glass-card)),var(--frost-layer)}
+details.adv,.tabs,.chip{background:linear-gradient(var(--glass-soft),var(--glass-soft)),var(--frost-layer)}
+.chip[aria-pressed="true"]{background:linear-gradient(var(--glass-card),var(--glass-card)),var(--frost-layer)}
+.notice{background:linear-gradient(var(--accent-soft),var(--accent-soft)),var(--frost-layer)}
+:is(.card,details.adv,.side,.titlebar,.modal,.ctx,.toast) :is(.card,.notice,.chip,.tabs,details.adv){--frost-layer:linear-gradient(transparent,transparent)}
+@media (prefers-reduced-transparency: reduce){
+  :root{--frost-layer:linear-gradient(var(--solid),var(--solid)) !important}
+  .titlebar,.side,.card,details.adv,.tabs,.chip,.notice{background:var(--solid)}
+}
+
+/* Removing a server: what happens to its folder. */
+.rm-choice{border:0;margin:0;padding:0;min-width:0;display:flex;flex-direction:column;gap:8px}
+.rm-choice legend{padding:0;margin-bottom:8px;font-weight:600;font-size:14px}
+.rm-choice .check{margin-top:0;padding:12px 14px;transition:border-color calc(160ms * var(--anim)),background-color calc(160ms * var(--anim))}
+.rm-choice .check:has(input:checked){border-color:var(--accent)}
+.rm-choice .check.danger input{accent-color:var(--danger)}
+.rm-choice .check.danger:has(input:checked){border-color:var(--danger);background:var(--danger-soft)}
+.rm-choice .check.danger b{color:var(--danger)}
+.rm-path{overflow-wrap:anywhere}
+#rmDlg .check span{display:flex;flex-direction:column;gap:3px}
+.btn.danger.solid{background:var(--danger);color:var(--on-danger);border-color:transparent}
+.btn.danger.solid:hover{background:color-mix(in srgb,var(--danger) 88%,#000)}
+:root{--on-danger:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--on-danger:#2a0907}}
+:root[data-theme="dark"]{--on-danger:#2a0907}

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 // FailedMod describes a mod that could not be downloaded through any automatic

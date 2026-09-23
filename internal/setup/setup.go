@@ -1,24 +1,25 @@
 // Package setup turns a modpack (a CurseForge URL, a Google Drive link, a
 // ZIP/RAR archive or an extracted directory) into a ready-to-start Minecraft
-// server. It is shared by the mcpackctl CLI and the AutoPack desktop app.
+// server. It is shared by the mcpackctl CLI and the Maple desktop app.
 package setup
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/bhhoang/AutoPackMC/internal/cleaner"
-	"github.com/bhhoang/AutoPackMC/internal/detector"
-	"github.com/bhhoang/AutoPackMC/internal/downloader"
-	"github.com/bhhoang/AutoPackMC/internal/installer"
-	"github.com/bhhoang/AutoPackMC/internal/java"
-	"github.com/bhhoang/AutoPackMC/internal/modstate"
-	"github.com/bhhoang/AutoPackMC/internal/parser"
-	"github.com/bhhoang/AutoPackMC/internal/resolver"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
-	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/bhhoang/Maple/internal/cleaner"
+	"github.com/bhhoang/Maple/internal/detector"
+	"github.com/bhhoang/Maple/internal/downloader"
+	"github.com/bhhoang/Maple/internal/installer"
+	"github.com/bhhoang/Maple/internal/java"
+	"github.com/bhhoang/Maple/internal/modstate"
+	"github.com/bhhoang/Maple/internal/parser"
+	"github.com/bhhoang/Maple/internal/resolver"
+	"github.com/bhhoang/Maple/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/utils"
 )
 
 // Stage is a step of a setup, reported through Options.OnStage.
@@ -127,6 +128,9 @@ func (r *run) start() error {
 	input := r.opts.Input
 	r.opts.Output = absPath(r.opts.Output)
 	output := r.opts.Output
+	// The downloaded pack and its unpacked copy are only needed while this
+	// runs; however it ends, they do not stay in the server folder.
+	defer RemoveLeftovers(output)
 
 	if err := r.enter(StageFindPack); err != nil {
 		return err
@@ -143,7 +147,7 @@ func (r *run) start() error {
 		if err := r.prepareOutput(); err != nil {
 			return err
 		}
-		zipPath := filepath.Join(output, "_pack_download.zip")
+		zipPath := filepath.Join(output, downloadName)
 		headers := map[string]string{}
 		if r.opts.APIKey != "" {
 			headers["x-api-key"] = r.opts.APIKey
@@ -166,7 +170,7 @@ func (r *run) start() error {
 		if err := r.prepareOutput(); err != nil {
 			return err
 		}
-		zipPath := filepath.Join(output, "_pack_download.zip")
+		zipPath := filepath.Join(output, downloadName)
 		if err := utils.DownloadGoogleDriveFile(fileID, zipPath); err != nil {
 			return fmt.Errorf("download Google Drive file: %w", err)
 		}
@@ -223,8 +227,35 @@ func (r *run) resolveJava() error {
 	return nil
 }
 
+// Scratch files a setup keeps in the server folder while it runs.
+const (
+	downloadName = "_pack_download.zip" // the pack as downloaded
+	extractName  = "_pack_extracted"    // the pack unpacked
+)
+
+// RemoveLeftovers deletes the scratch files a setup keeps in the server
+// folder dir while it runs. Setups before this cleaned up left them behind,
+// holding a second copy of the pack.
+func RemoveLeftovers(dir string) {
+	for _, name := range []string{extractName, downloadName} {
+		p := filepath.Join(dir, name)
+		if _, err := os.Lstat(p); err != nil {
+			continue
+		}
+		if err := os.RemoveAll(p); err != nil {
+			logger.Get().Warn().Err(err).Str("path", p).Msg("could not remove setup leftovers")
+		}
+	}
+}
+
 func extract(archive, output string) (string, error) {
-	workDir := filepath.Join(output, "_pack_extracted")
+	workDir := filepath.Join(output, extractName)
+	// Start empty: files left by an earlier run must not mix into this pack.
+	if rel, err := filepath.Rel(workDir, archive); err != nil || strings.HasPrefix(rel, "..") {
+		if err := os.RemoveAll(workDir); err != nil {
+			return "", fmt.Errorf("clear %s: %w", workDir, err)
+		}
+	}
 	logger.Get().Info().Str("archive", archive).Str("dest", workDir).Msg("extracting pack archive")
 	if err := utils.ExtractArchive(archive, workDir); err != nil {
 		return "", fmt.Errorf("extract archive: %w", err)

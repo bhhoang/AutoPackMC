@@ -1,4 +1,4 @@
-// AutoPack page logic. Go methods are reached through window.go.app.Service
+// Maple page logic. Go methods are reached through window.go.app.Service
 // (the app) and window.go.main.Window (the title bar); updates arrive as
 // runtime events: setup, server, server-log, files-dropped, close-requested.
 (() => {
@@ -60,12 +60,12 @@
 
   /* ------------------------------------------------ toast */
   let toastTimer;
-  function toast(msg, bad){
+  function toast(msg, bad, ms = 3200){
     $('#toastMsg').textContent = msg;
     $('#toastIcon').textContent = bad ? 'error' : 'check_circle';
     $('#toastIcon').style.color = bad ? 'var(--danger)' : '';
     const el = $('#toast'); el.classList.add('show');
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), ms);
   }
   const toastErr = (e, vars) => toast(errText(parseErr(e), vars), true);
 
@@ -122,8 +122,13 @@
     if (x === 'console') loadLog();
   }
 
+  function openServer(id, tab = S.tab){
+    if (S.current !== id){ S.current = id; S.modsFor = null; S.props = S.propsSaved = null; }
+    show('server'); setTab(tab);
+  }
+
   function renderSidebar(){
-    const list = $('#srvList'); list.querySelectorAll('.srv').forEach(n => n.remove());
+    const list = $('#srvList'); list.querySelectorAll('.srv-row').forEach(n => n.remove());
     for (const s of S.servers.values()){
       const b = document.createElement('button'); b.type = 'button'; b.className = 'srv';
       b.setAttribute('aria-current', S.view === 'server' && s.id === S.current ? 'true' : 'false');
@@ -134,8 +139,29 @@
         crashed: `<span class="bad">${esc(t('sideAttention'))}</span>`,
       }[s.state] || '';
       b.innerHTML = `${tileHTML(s.name, s.icon || s.logoUrl)}<div><div class="t">${esc(s.name)}</div><div class="s">${st}</div></div>`;
-      b.onclick = () => { S.current = s.id; S.modsFor = null; S.props = S.propsSaved = null; show('server'); setTab(S.tab); };
-      list.appendChild(b);
+      b.onclick = () => openServer(s.id);
+      b.oncontextmenu = e => { e.preventDefault(); openMenu(s.id, e.clientX, e.clientY, b); };
+      b.onkeydown = e => {
+        if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
+        e.preventDefault();
+        const r = b.getBoundingClientRect();
+        openMenu(s.id, r.left + 24, r.bottom - 6, b);
+      };
+      // The ⋯ button opens the same menu, for anyone who doesn't right-click.
+      const more = document.createElement('button');
+      more.type = 'button'; more.className = 'srv-more';
+      more.setAttribute('aria-label', t('moreActions', {name: s.name}));
+      more.setAttribute('aria-haspopup', 'menu'); more.setAttribute('aria-expanded', 'false');
+      more.title = t('moreActionsTip');
+      more.innerHTML = '<span class="ms">more_horiz</span>';
+      more.onclick = () => {
+        if (menuClosedBy === more){ menuClosedBy = null; return; } // this click closed it
+        const r = more.getBoundingClientRect();
+        openMenu(s.id, r.right, r.bottom + 4, more, true);
+      };
+      const row = document.createElement('div'); row.className = 'srv-row';
+      row.append(b, more);
+      list.appendChild(row);
     }
     $('#settingsBtn').setAttribute('aria-current', S.view === 'settings');
   }
@@ -277,8 +303,8 @@
   });
 
   /* ------------------------------------------------ server actions */
-  async function act(a){
-    const s = srv(); if (!s) return;
+  async function act(a, id = S.current){
+    const s = S.servers.get(id); if (!s) return;
     try {
       if (a === 'start'){ $('#restartNote').hidden = true; await api().StartServer(s.id); }
       if (a === 'stop'){ S.stopping.add(s.id); renderServer(); await api().StopServer(s.id); }
@@ -711,6 +737,8 @@
     $('#setKey').value = st.apiKey || '';
     $('#setUpdCheck').checked = !st.skipUpdateCheck;
     $$('[data-anim-set]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.animSet === (st.animation || ''))));
+    $$('[data-fx-set]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.fxSet === (st.effects || ''))));
+    $('#fxHelp').textContent = t(!st.effects && st.lightDetected ? 'fxAutoLight' : 'fxHelp');
     $('#verText').textContent = S.update && S.update.dev ? t('versionDev') : t('versionIs', {v: S.app.version});
   }
   async function saveSettings(change){
@@ -724,6 +752,67 @@
   $$('[data-theme-set]').forEach(b => b.onclick = () => { applyTheme(b.dataset.themeSet); saveSettings({theme: b.dataset.themeSet}); renderSettings(); });
   $('#setJava').addEventListener('change', e => saveSettings({autoJava: e.target.checked}));
   $('#setUpdCheck').addEventListener('change', e => saveSettings({skipUpdateCheck: !e.target.checked}));
+  // Glass effects: "full", "light", or "" to decide from how this PC draws.
+  function lightLook(){
+    const st = S.app.settings;
+    return st.effects === 'light' || (!st.effects && !!st.lightDetected);
+  }
+  function applyEffects(){
+    const root = document.documentElement, was = root.dataset.effects;
+    root.dataset.effects = lightLook() ? 'light' : 'full';
+    Motion.setScale(S.app.settings.animation || '');
+    if (was && was !== root.dataset.effects) requestAnimationFrame(() => Motion.refresh(false));
+  }
+  // True when Windows is drawing the app without the graphics card, as on
+  // Remote Desktop, in virtual machines or with a broken driver.
+  function drawnWithoutGpu(){
+    try {
+      const gl = document.createElement('canvas').getContext('webgl');
+      if (!gl) return true;
+      const info = gl.getExtension('WEBGL_debug_renderer_info');
+      const name = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+      const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
+      return /swiftshader|basic render|llvmpipe|software/i.test(name);
+    } catch { return false; }
+  }
+  // In Auto, watch the frames while the page settles in. A PC that cannot
+  // keep up with the frosted glass gets the light look, now and next time.
+  function checkEffects(){
+    const st = S.app.settings;
+    if (st.effects || st.lightDetected) return;
+    if (drawnWithoutGpu()) return goLight();
+    if (!Motion.scale() || document.visibilityState !== 'visible') return; // nothing moves to measure
+    Motion.enter($('#v-' + S.view), '.card, .head', {max: 12});
+    const frames = []; let last = 0;
+    const until = performance.now() + 1200;
+    const tick = now => {
+      if (last) frames.push(now - last);
+      last = now;
+      if (now < until) return requestAnimationFrame(tick);
+      if (frames.length < 8 || S.app.settings.effects) return;
+      // The middle frame, so one slow start-up frame does not count.
+      const mid = [...frames].sort((a, b) => a - b)[frames.length >> 1];
+      if (mid > 30) goLight();
+    };
+    requestAnimationFrame(tick);
+  }
+  function goLight(){
+    S.app.settings.lightDetected = true;
+    applyEffects();
+    saveSettings({lightDetected: true});
+    toast(t('toastLightLook'), false, 8000);
+    if (S.view === 'settings') renderSettings();
+  }
+  $$('[data-fx-set]').forEach(b => b.onclick = () => {
+    const effects = b.dataset.fxSet;
+    S.app.settings.effects = effects;
+    // Choosing Auto again checks this PC afresh.
+    if (!effects) S.app.settings.lightDetected = false;
+    applyEffects();
+    saveSettings({effects, lightDetected: S.app.settings.lightDetected});
+    renderSettings();
+    if (!effects) requestAnimationFrame(checkEffects);
+  });
   $$('[data-anim-set]').forEach(b => b.onclick = () => {
     Motion.setScale(b.dataset.animSet);
     saveSettings({animation: b.dataset.animSet});
@@ -823,7 +912,11 @@
     const s = srv(); if (!s || !S.props) return;
     const box = $('#pIcon');
     box.classList.toggle('has', !!s.icon);
-    box.innerHTML = s.icon ? `<img alt="" src="${s.icon}">` : '<span class="ms">image</span>';
+    // Only rebuild the picture when it changes, not on every settings edit.
+    if (box.dataset.src !== (s.icon || '')){
+      box.dataset.src = s.icon || '';
+      box.innerHTML = s.icon ? `<img alt="" src="${s.icon}">` : '<span class="ms">image</span>';
+    }
     $('#pvName').textContent = s.name;
     $('#pvCount').textContent = `${s.players.length}/${S.props.maxPlayers}`;
     $('#pvCountWrap').title = t('playerCountTip', {n: s.players.length, max: S.props.maxPlayers});
@@ -957,7 +1050,7 @@
     renderProps();
   });
 
-  /* ------------------------------------------------ AutoPack updates */
+  /* ------------------------------------------------ Maple updates */
   async function checkUpdate(manual){
     if (manual){ $('#updStatus').textContent = t('checking'); $('#checkUpd').disabled = true; }
     try {
@@ -1052,15 +1145,198 @@
   };
   addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    $('#closeDlg').hidden = true; $('#updDlg').hidden = true;
+    $('#closeDlg').hidden = true; $('#updDlg').hidden = true; $('#rmDlg').hidden = true; $('#renDlg').hidden = true;
   });
+
+  /* ------------------------------------------------ remove a server */
+  // Asks first. The folder stays unless the user picks the Recycle Bin or
+  // permanent deletion; the button says so when it deletes for good.
+  $('#rmBtn').onclick = () => openRemove(S.current);
+  function openRemove(id){
+    const s = S.servers.get(id); if (!s) return;
+    S.rmId = id;
+    if (s.state === 'running' || s.state === 'starting' || S.stopping.has(s.id)) return toast(t('rmStopFirst'), true);
+    $('#rmDlgTitle').textContent = t('rmDlgTitle', {name: s.name});
+    $('#rmPath').textContent = t('rmPath', {dir: s.dir});
+    $('#rmDlg input[value=keep]').checked = true;
+    rmChoiceChanged();
+    $('#rmDlg').hidden = false; Motion.pop($('#rmDlg .modal')); $('#rmNo').focus();
+  }
+  const rmChoice = () => $('#rmDlg input[name=rmFolder]:checked').value;
+  function rmChoiceChanged(){
+    const del = rmChoice() === 'delete';
+    $('#rmYesTxt').textContent = t(del ? 'rmYesDelete' : 'rmYes');
+    $('#rmYes').classList.toggle('solid', del);
+  }
+  $$('#rmDlg input[name=rmFolder]').forEach(r => r.addEventListener('change', rmChoiceChanged));
+  $('#rmNo').onclick = () => { $('#rmDlg').hidden = true; };
+  $('#rmYes').onclick = async () => {
+    const s = S.servers.get(S.rmId); if (!s) return;
+    const folder = rmChoice(), btn = $('#rmYes');
+    btn.disabled = true;
+    try {
+      await api().RemoveServer(s.id, folder);
+      $('#rmDlg').hidden = true;
+      S.servers.delete(s.id);
+      if (S.current === s.id) S.current = null;
+      // Forget what was loaded for the removed server, as switching does.
+      S.modsFor = null; S.props = S.propsSaved = null;
+      home();
+      if (S.view === 'server') setTab('overview');
+      toast(t({keep: 'toastServerRemoved', trash: 'toastServerTrashed', delete: 'toastServerDeleted'}[folder], {name: s.name}));
+    } catch (err){
+      toastErr(err);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  /* ------------------------------------------------ server menu */
+  // Right-click a server in the list (or press the menu key) for its
+  // actions. Items that need a stopped server are greyed out while it runs.
+  const menu = $('#ctxMenu');
+  let menuFor = null, menuReturn = null, menuClosedBy = null;
+
+  function menuItems(s){
+    const busy = s.state === 'running' || s.state === 'starting' || S.stopping.has(s.id);
+    const hint = busy ? t('stopFirstHint') : '';
+    return [
+      busy ? {icon: 'stop', label: t('menuStop'), run: () => act('stop', s.id), off: S.stopping.has(s.id)}
+           : {icon: 'play_arrow', label: t('startServer'), run: () => act('start', s.id)},
+      {icon: 'folder_open', label: t('openFolder'), run: () => api().OpenServerFolder(s.id)},
+      {icon: 'tune', label: t('menuSettings'), run: () => openServer(s.id, 'props')},
+      null,
+      {icon: 'edit', label: t('menuRename'), run: () => openRename(s.id)},
+      {icon: 'drive_file_move', label: t('menuMove'), run: () => moveServer(s.id), off: busy, hint},
+      null,
+      {icon: 'delete', label: t('menuRemove'), run: () => openRemove(s.id), off: busy, hint, danger: true},
+    ];
+  }
+
+  // x, y is the menu's top-left corner, or its top-right with alignRight.
+  function openMenu(id, x, y, from, alignRight = false){
+    const s = S.servers.get(id); if (!s) return;
+    closeMenu(false);
+    menuFor = id; menuReturn = from;
+    if (from && from.hasAttribute('aria-expanded')) from.setAttribute('aria-expanded', 'true');
+    menu.setAttribute('aria-label', t('menuLabel', {name: s.name}));
+    menu.innerHTML = '';
+    const items = menuItems(s);
+    for (const it of items){
+      if (!it){ const hr = document.createElement('div'); hr.className = 'sep'; hr.setAttribute('role', 'separator'); menu.appendChild(hr); continue; }
+      const b = document.createElement('button');
+      b.type = 'button'; b.setAttribute('role', 'menuitem'); b.tabIndex = -1;
+      if (it.danger) b.classList.add('danger');
+      if (it.off){ b.disabled = true; b.setAttribute('aria-disabled', 'true'); }
+      if (it.off && it.hint) b.title = it.hint;
+      b.innerHTML = `<span class="ms">${it.icon}</span><span>${esc(it.label)}</span>`;
+      b.onclick = () => { closeMenu(false); it.run(); };
+      menu.appendChild(b);
+    }
+    menu.hidden = false;
+    // Keep it on screen: open up or left when there is no room.
+    const w = menu.offsetWidth, h = menu.offsetHeight, pad = 8;
+    if (alignRight) x -= w;
+    const left = Math.min(x, innerWidth - w - pad), top = y + h + pad > innerHeight ? Math.max(pad, y - h) : y;
+    menu.style.left = Math.max(pad, left) + 'px';
+    menu.style.top = top + 'px';
+    menu.style.transformOrigin = `${alignRight ? w : x - left}px ${y >= top ? 0 : h}px`;
+    if (Motion.scale()) menu.animate([{opacity: 0, transform: 'scale(.94)'}, {opacity: 1, transform: 'none'}],
+      {duration: Motion.ms(170), easing: 'cubic-bezier(.2,1.2,.4,1)'});
+    const first = menu.querySelector('[role=menuitem]:not(:disabled)');
+    if (first) first.focus();
+  }
+
+  function closeMenu(restoreFocus = true){
+    if (menu.hidden) return;
+    menu.hidden = true; menuFor = null;
+    if (menuReturn && menuReturn.hasAttribute('aria-expanded')) menuReturn.setAttribute('aria-expanded', 'false');
+    if (restoreFocus && menuReturn && document.contains(menuReturn)) menuReturn.focus();
+    menuReturn = null;
+  }
+
+  menu.addEventListener('keydown', e => {
+    const items = [...menu.querySelectorAll('[role=menuitem]:not(:disabled)')];
+    const i = items.indexOf(document.activeElement);
+    const go = n => { e.preventDefault(); items[(n + items.length) % items.length].focus(); };
+    if (e.key === 'ArrowDown') go(i + 1);
+    else if (e.key === 'ArrowUp') go(i - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(items.length - 1);
+    else if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); closeMenu(); }
+    else if (e.key === 'Tab'){ e.preventDefault(); closeMenu(); }
+  });
+  document.addEventListener('pointerdown', e => {
+    if (menu.hidden || menu.contains(e.target)) return;
+    // A press on the ⋯ button that opened the menu closes it; its click
+    // must not open it again.
+    menuClosedBy = menuReturn && menuReturn.contains(e.target) && menuReturn.classList.contains('srv-more') ? menuReturn : null;
+    closeMenu(false);
+  }, true);
+  document.addEventListener('contextmenu', e => { if (!menu.hidden && !e.target.closest('.srv-row')) closeMenu(false); });
+  addEventListener('blur', () => closeMenu(false));
+  addEventListener('resize', () => closeMenu(false));
+  $('#srvList').addEventListener('scroll', () => closeMenu(false), {passive: true});
+
+  /* rename */
+  function openRename(id){
+    const s = S.servers.get(id); if (!s) return;
+    S.renId = id;
+    $('#renName').value = s.name;
+    $('#renDlg').hidden = false; Motion.pop($('#renDlg .modal'));
+    $('#renName').focus(); $('#renName').select();
+  }
+  $('#renNo').onclick = () => { $('#renDlg').hidden = true; };
+  $('#renForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id = S.renId, btn = $('#renYes');
+    btn.disabled = true;
+    try {
+      const v = await api().RenameServer(id, $('#renName').value);
+      $('#renDlg').hidden = true;
+      refreshServer(v);
+      toast(t('toastRenamed', {name: v.name}));
+    } catch (err){
+      toastErr(err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  /* move */
+  async function moveServer(id){
+    const s = S.servers.get(id); if (!s || S.moving) return;
+    let dest;
+    try { dest = await api().PickFolder(s.dir.replace(/[\\/][^\\/]+$/, '')); } catch (err){ return toastErr(err); }
+    if (!dest) return;
+    S.moving = true;
+    toast(t('moving', {name: s.name}), false, 60000);
+    try {
+      const v = await api().MoveServer(id, dest);
+      refreshServer(v);
+      toast(t('toastMoved', {name: v.name, dir: v.dir}), false, 6000);
+    } catch (err){
+      toastErr(err);
+    } finally {
+      S.moving = false;
+    }
+  }
+
+  // Shows a server's new details wherever they appear.
+  function refreshServer(v){
+    const prev = S.servers.get(v.id);
+    // The list's live state (running, players) is newer than this copy.
+    S.servers.set(v.id, prev ? {...v, state: prev.state, players: prev.players} : v);
+    renderSidebar();
+    if (S.view === 'server' && S.current === v.id){ renderServer(); if (S.props) renderIcon(); }
+  }
 
   /* ------------------------------------------------ start */
   async function init(){
     S.app = await api().State();
     const saved = S.app.settings.language;
     lang = saved === 'en' || saved === 'vi' ? saved : (navigator.language || '').toLowerCase().startsWith('vi') ? 'vi' : 'en';
-    Motion.setScale(S.app.settings.animation || '');
+    applyEffects();
     applyTheme(S.app.settings.theme);
     applyStatic();
     for (const s of S.app.servers) S.servers.set(s.id, s);
@@ -1068,11 +1344,12 @@
     home(); setTab('overview'); syncMax();
     const pressed = b => b.getAttribute('aria-pressed') === 'true';
     Motion.attach($('.tabs'), '[role=tab]', b => b.getAttribute('aria-selected') === 'true');
-    Motion.attach($('#srvList'), '.srv', b => b.getAttribute('aria-current') === 'true');
+    Motion.attach($('#srvList'), '.srv-row', r => r.querySelector('.srv').getAttribute('aria-current') === 'true');
     Motion.attach($('.lang-seg'), 'button', pressed);
     Motion.attach($('#p-mods .chips'), '.chip', pressed);
     $$('#v-settings .theme-seg').forEach(g => { g.classList.add('lens-accent'); Motion.attach(g, 'button', pressed); });
     ['#pMode', '#pDiff'].forEach(sel => { $(sel).classList.add('lens-accent'); Motion.attach($(sel), 'button', b => b.getAttribute('aria-checked') === 'true'); });
+    document.fonts.ready.then(() => setTimeout(checkEffects, 600));
 
     const on = window.runtime.EventsOn;
     on('setup', onSetup);

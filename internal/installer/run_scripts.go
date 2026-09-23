@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bhhoang/AutoPackMC/internal/runtime"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/Maple/internal/runtime"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 // runScriptMarker identifies run scripts written by WriteRunScripts, which

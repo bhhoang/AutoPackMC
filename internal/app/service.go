@@ -1,4 +1,4 @@
-// Package app is the logic behind the AutoPack desktop window: servers the
+// Package app is the logic behind the Maple desktop window: servers the
 // user has set up, setting up and updating packs, running servers, and
 // managing their mods. It has no dependency on the window toolkit; the
 // window reaches it through the exported methods of Service and receives
@@ -19,11 +19,11 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/bhhoang/AutoPackMC/internal/detector"
-	"github.com/bhhoang/AutoPackMC/internal/downloader"
-	"github.com/bhhoang/AutoPackMC/internal/resolver"
-	"github.com/bhhoang/AutoPackMC/internal/setup"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/Maple/internal/detector"
+	"github.com/bhhoang/Maple/internal/downloader"
+	"github.com/bhhoang/Maple/internal/resolver"
+	"github.com/bhhoang/Maple/internal/setup"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 // UI is what the service needs from the window it runs in.
@@ -62,6 +62,13 @@ type Service struct {
 	setupMu     sync.Mutex
 	setupCancel context.CancelFunc // non-nil while a setup runs
 	setupDone   chan struct{}      // closed when the running setup has finished
+	setupDir    string             // the folder the running setup works in
+	cleaned     chan struct{}      // closed once old setup leftovers are removed
+
+	// trash moves a folder to the Recycle Bin, and move moves a folder;
+	// tests replace them.
+	trash func(dir string) error
+	move  func(from, to string) error
 
 	update updater
 
@@ -70,6 +77,7 @@ type Service struct {
 
 	serversMu sync.Mutex
 	running   map[string]*running // by server ID, while running
+	removing  map[string]bool     // by server ID, while RemoveServer runs
 	logs      map[string]*logRing // by server ID, kept after the server stops
 	states    map[string]*stateView
 }
@@ -85,16 +93,30 @@ func New(cfg Config, ui UI) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{
-		cfg:     cfg,
-		ui:      ui,
-		store:   st,
-		running: map[string]*running{},
-		logs:    map[string]*logRing{},
-		states:  map[string]*stateView{},
+		cfg:      cfg,
+		ui:       ui,
+		store:    st,
+		running:  map[string]*running{},
+		removing: map[string]bool{},
+		trash:    moveToRecycleBin,
+		move:     moveFolder,
+		logs:     map[string]*logRing{},
+		states:   map[string]*stateView{},
 	}
 	s.downloadMod = func(projectID, fileID int, dir string) error {
 		return s.downloaderFor().DownloadOne(projectID, fileID, dir)
 	}
+	// Setups from before they cleaned up after themselves left a second copy
+	// of the pack in the server folder. No setup runs yet, so it is safe to
+	// remove, in the background so the window opens at once.
+	recs := st.Servers()
+	s.cleaned = make(chan struct{})
+	go func() {
+		defer close(s.cleaned)
+		for _, r := range recs {
+			setup.RemoveLeftovers(r.Dir)
+		}
+	}()
 	return s, nil
 }
 
@@ -129,6 +151,9 @@ func (s *Service) SaveSettings(v Settings) error {
 	}
 	if !validAnimation[v.Animation] {
 		v.Animation = ""
+	}
+	if v.Effects != "full" && v.Effects != "light" {
+		v.Effects = ""
 	}
 	return s.store.SaveSettings(v)
 }
@@ -328,17 +353,18 @@ func (s *Service) StartSetup(req SetupRequest) error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	s.setupCancel, s.setupDone = cancel, done
+	s.setupCancel, s.setupDone, s.setupDir = cancel, done, req.Dir
 	s.setupMu.Unlock()
 
 	go func() {
 		defer func() {
 			s.setupMu.Lock()
-			s.setupCancel, s.setupDone = nil, nil
+			s.setupCancel, s.setupDone, s.setupDir = nil, nil, ""
 			s.setupMu.Unlock()
 			cancel()
 			close(done)
 		}()
+		<-s.cleaned // the startup cleanup must not remove this setup's files
 		s.runSetup(ctx, req)
 	}()
 	return nil
@@ -440,9 +466,11 @@ func (s *Service) runSetup(ctx context.Context, req SetupRequest) {
 		}
 	}
 	rec, err := s.store.UpdateServer(id, func(r *ServerRecord) {
-		r.Name = res.Name
-		if r.Name == "" {
-			r.Name = filepath.Base(req.Dir)
+		if !r.CustomName {
+			r.Name = res.Name
+			if r.Name == "" {
+				r.Name = filepath.Base(req.Dir)
+			}
 		}
 		r.Dir = req.Dir
 		r.Source = opts.Input

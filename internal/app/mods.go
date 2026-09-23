@@ -11,8 +11,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/bhhoang/AutoPackMC/internal/resolver"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/Maple/internal/resolver"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 // disabledSuffix marks a jar the user turned off. The loaders only load

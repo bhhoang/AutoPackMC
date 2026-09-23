@@ -3,17 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AutoPack</title>
+<title>Maple · Modpack Server</title>
 <link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <canvas id="scene" aria-hidden="true"></canvas>
 
-<div class="window glass" role="application" aria-label="AutoPack">
+<div class="window glass" role="application" aria-label="Maple">
   <div class="titlebar">
     <div class="app-mark"><span class="ms fill">deployed_code</span></div>
-    <span class="name">AutoPack</span>
+    <span class="name">Maple</span>
+    <span class="sub" data-i18n="appSub"></span>
     <div class="lang-seg" role="group" data-i18n-aria="language">
       <button type="button" data-lang-set="en" lang="en" aria-label="English">EN</button>
       <button type="button" data-lang-set="vi" lang="vi" aria-label="Tiếng Việt">VI</button>
@@ -37,7 +38,7 @@
         <button class="btn sm full" type="button" id="updBtn" data-i18n="updateNow"></button>
       </div>
       <button class="side-link" type="button" id="settingsBtn"><span class="ms">settings</span><span data-i18n="settings"></span></button>
-      <button class="side-link" type="button" data-open="https://github.com/bhhoang/AutoPackMC#readme"><span class="ms">help</span><span data-i18n="help"></span></button>
+      <button class="side-link" type="button" data-open="https://github.com/bhhoang/Maple#readme"><span class="ms">help</span><span data-i18n="help"></span></button>
     </nav>
 
     <main class="main" id="main">
@@ -281,6 +282,14 @@
               <button class="link" type="button" id="propsFile" data-i18n="editPropsFile"></button>
             </div>
           </form>
+
+          <div class="card rm-card">
+            <div>
+              <h3><span class="ms">delete</span><span data-i18n="rmTitle"></span></h3>
+              <p class="help" data-i18n="rmHelp"></p>
+            </div>
+            <button class="btn danger" type="button" id="rmBtn"><span class="ms">delete</span><span data-i18n="rmBtn"></span></button>
+          </div>
         </div>
 
         <div role="tabpanel" id="p-console" aria-labelledby="t-console" hidden>
@@ -472,6 +481,15 @@
               <button type="button" data-anim-set="3">3x</button>
               <button type="button" data-anim-set="4">4x</button>
             </div>
+            <div class="fx-row">
+              <b class="lbl" data-i18n="fxLbl"></b>
+              <div class="theme-seg" role="group" data-i18n-aria="fxLbl" id="fxSeg">
+                <button type="button" data-fx-set="" data-i18n="animAuto"></button>
+                <button type="button" data-fx-set="full" data-i18n="fxFull"></button>
+                <button type="button" data-fx-set="light" data-i18n="fxLight"></button>
+              </div>
+            </div>
+            <p class="help" id="fxHelp"></p>
           </div>
           <div class="card">
             <h3><span class="ms">coffee</span>Java</h3>
@@ -527,6 +545,41 @@
     </div>
   </div>
 </div>
+
+<div class="modal-back" id="rmDlg" hidden>
+  <div class="modal glass" role="alertdialog" aria-modal="true" aria-labelledby="rmDlgTitle" aria-describedby="rmDlgText">
+    <h2 id="rmDlgTitle"></h2>
+    <p class="lead" id="rmDlgText" data-i18n="rmDlgText"></p>
+    <fieldset class="rm-choice">
+      <legend data-i18n="rmFolderLegend"></legend>
+      <label class="check"><input type="radio" name="rmFolder" value="keep"><span><b data-i18n="rmKeep"></b><span class="help" data-i18n="rmKeepHelp"></span></span></label>
+      <label class="check"><input type="radio" name="rmFolder" value="trash"><span><b data-i18n="rmTrash"></b><span class="help" data-i18n="rmTrashHelp"></span></span></label>
+      <label class="check danger"><input type="radio" name="rmFolder" value="delete"><span><b data-i18n="rmDelete"></b><span class="help" data-i18n="rmDeleteHelp"></span></span></label>
+    </fieldset>
+    <p class="help rm-path" id="rmPath"></p>
+    <div class="row">
+      <button class="btn" type="button" id="rmNo" data-i18n="cancel"></button>
+      <button class="btn danger" type="button" id="rmYes"><span class="ms">delete</span><span id="rmYesTxt"></span></button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-back" id="renDlg" hidden>
+  <form class="modal glass" role="dialog" aria-modal="true" aria-labelledby="renTitle" id="renForm">
+    <h2 id="renTitle" data-i18n="renTitle"></h2>
+    <div class="field">
+      <label for="renName" data-i18n="renLabel"></label>
+      <input class="input" id="renName" maxlength="64" autocomplete="off" aria-describedby="renHelp">
+      <span class="help" id="renHelp" data-i18n="renHelp"></span>
+    </div>
+    <div class="row">
+      <button class="btn" type="button" id="renNo" data-i18n="cancel"></button>
+      <button class="btn primary" type="submit" id="renYes"><span class="ms">check</span><span data-i18n="renSave"></span></button>
+    </div>
+  </form>
+</div>
+
+<div class="ctx glass" id="ctxMenu" role="menu" hidden></div>
 
 <div class="toast glass" id="toast" role="status"><span class="ms fill" id="toastIcon">check_circle</span><span id="toastMsg"></span></div>
 

@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bhhoang/AutoPackMC/internal/parser"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
-	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/bhhoang/Maple/internal/parser"
+	"github.com/bhhoang/Maple/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/utils"
 )
 
 const (

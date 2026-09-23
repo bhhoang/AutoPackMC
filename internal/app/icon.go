@@ -20,14 +20,14 @@ import (
 	_ "golang.org/x/image/webp" // decode WebP pictures
 )
 
-// pictureFilter lists the picture files AutoPack can read. Each is converted
+// pictureFilter lists the picture files Maple can read. Each is converted
 // to PNG, the only format Minecraft reads for server-icon.png.
 const pictureFilter = "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.tif;*.tiff"
 
 // iconSize is the size Minecraft needs for server-icon.png.
 const iconSize = 64
 
-// maxIconSource caps the pictures AutoPack reads (bytes).
+// maxIconSource caps the pictures Maple reads (bytes).
 const maxIconSource = 20 << 20
 
 func iconPath(dir string) string { return filepath.Join(dir, "server-icon.png") }

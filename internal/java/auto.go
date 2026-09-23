@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
-	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/bhhoang/Maple/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/utils"
 )
 
 // fallbackVersion is downloaded when the Minecraft version is unknown and no

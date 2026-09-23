@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 // clientOnlyPatterns lists filename substrings/prefixes for known client-only mods.

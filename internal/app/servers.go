@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bhhoang/AutoPackMC/internal/java"
-	"github.com/bhhoang/AutoPackMC/internal/runtime"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/Maple/internal/java"
+	"github.com/bhhoang/Maple/internal/runtime"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 // Server states shown on the page.
@@ -156,6 +156,10 @@ func (s *Service) StartServer(id string) error {
 	if s.running[id] != nil {
 		s.serversMu.Unlock()
 		return nil
+	}
+	if s.removing[id] {
+		s.serversMu.Unlock()
+		return &Error{Code: "no_server"}
 	}
 	// Hold the slot while java launches, so a second click cannot start a
 	// second server in the same folder.

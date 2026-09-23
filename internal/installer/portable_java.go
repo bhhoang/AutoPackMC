@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 // portableJavaMarker tags the lines UsePortableJava adds, so re-running setup

@@ -20,7 +20,13 @@ type Settings struct {
 	// Animation multiplies how long animations take: "0" turns them off,
 	// "1" is normal, "4" is four times slower. Empty follows Windows.
 	Animation string `json:"animation"`
-	// SkipUpdateCheck turns off looking for a new AutoPack at startup.
+	// Effects picks the look: "full" (frosted glass), "light" (solid
+	// panels, for PCs that draw slowly) or "" to decide automatically.
+	Effects string `json:"effects"`
+	// LightDetected is set when the automatic check found this PC draws
+	// the full look slowly, so the next start uses the light look at once.
+	LightDetected bool `json:"lightDetected"`
+	// SkipUpdateCheck turns off looking for a new Maple at startup.
 	SkipUpdateCheck bool `json:"skipUpdateCheck"`
 }
 
@@ -28,6 +34,7 @@ type Settings struct {
 type ServerRecord struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
+	CustomName    bool      `json:"customName"` // the user renamed it; pack updates keep the name
 	Dir           string    `json:"dir"`
 	Source        string    `json:"source"` // what it was set up from: a link or a file
 	PackVersion   string    `json:"packVersion"`

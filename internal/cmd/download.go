@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/bhhoang/AutoPackMC/internal/downloader"
-	"github.com/bhhoang/AutoPackMC/internal/resolver"
-	"github.com/bhhoang/AutoPackMC/pkg/logger"
-	"github.com/bhhoang/AutoPackMC/pkg/utils"
+	"github.com/bhhoang/Maple/internal/downloader"
+	"github.com/bhhoang/Maple/internal/resolver"
+	"github.com/bhhoang/Maple/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

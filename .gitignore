@@ -1,3 +1,6 @@
 # Local builds (releases are built by CI)
+/Maple*.exe
 /AutoPack*.exe
 /dist/
+# Windows resources made by go-winres in CI
+*.syso
