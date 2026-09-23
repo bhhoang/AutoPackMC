@@ -334,15 +334,20 @@
         <div><b>${esc(m.name)}</b><div class="f" title="${esc(m.fileName)}">${esc(m.fileName)}</div>${status}</div>
         ${action}</div>`;
     });
-    // The first screenful now, the rest on the next frame, so opening a pack
-    // with hundreds of mods never holds up a frame.
+    // The first screenful now; the rest once the rows have settled in, a
+    // few at a time, so a pack with hundreds of mods never holds up a frame.
     S.modRows = list;
     const token = (S.modRender = (S.modRender || 0) + 1);
-    box.innerHTML = rows.slice(0, 24).join('');
-    if (rows.length > 24) requestAnimationFrame(() => {
-      if (token === S.modRender) box.insertAdjacentHTML('beforeend', rows.slice(24).join(''));
-    });
-    if (animate === true) Motion.enter(box, '.mod', {max: 16, stagger: 22});
+    box.innerHTML = rows.slice(0, 16).join('');
+    if (animate === true) Motion.enter(box, '.mod', {max: 12, stagger: 22});
+    let at = 16;
+    const more = () => {
+      if (token !== S.modRender || at >= rows.length) return;
+      box.insertAdjacentHTML('beforeend', rows.slice(at, at + 30).join(''));
+      at += 30;
+      requestAnimationFrame(() => setTimeout(more));
+    };
+    if (rows.length > at) setTimeout(more, animate === true ? Motion.ms(500) : 0);
   }
   // One click handler for every row's button.
   $('#modList').addEventListener('click', async e => {

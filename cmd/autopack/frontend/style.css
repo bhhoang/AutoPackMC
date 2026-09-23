@@ -534,3 +534,4 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 .mods .mod.card,.mods .empty.card,.results .result{-webkit-backdrop-filter:none;backdrop-filter:none}
 .mods .mod.card{background:color-mix(in srgb,var(--solid) 66%,transparent);content-visibility:auto;contain-intrinsic-size:auto 66px}
 .mod-sk{height:66px;border-radius:18px}
+.mods .mod.card{box-shadow:inset 0 1px 0 var(--glass-hi),0 2px 6px var(--shadow)}
