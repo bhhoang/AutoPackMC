@@ -17,6 +17,9 @@ type Settings struct {
 	ServersDir string `json:"serversDir"` // where new servers are created
 	APIKey     string `json:"apiKey"`     // CurseForge key; empty uses the built-in one
 	AutoJava   bool   `json:"autoJava"`   // pick and download Java automatically
+	// Animation multiplies how long animations take: "0" turns them off,
+	// "1" is normal, "4" is four times slower. Empty follows Windows.
+	Animation string `json:"animation"`
 	// SkipUpdateCheck turns off looking for a new AutoPack at startup.
 	SkipUpdateCheck bool `json:"skipUpdateCheck"`
 }

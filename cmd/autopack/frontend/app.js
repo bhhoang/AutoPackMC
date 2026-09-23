@@ -95,26 +95,33 @@
 
   /* ------------------------------------------------ navigation */
   function show(v){
+    const changed = S.view !== v;
     S.view = v;
     ['welcome','server','new','progress','settings'].forEach(k => { $('#v-' + k).hidden = k !== v; });
     if (v === 'server') renderServer();
     if (v === 'settings') renderSettings();
     renderSidebar();
     $('#main').scrollTop = 0;
+    if (changed){
+      const sec = $('#v-' + v);
+      Motion.enter(sec, v === 'server' ? ':scope > .head' : '.card, .head, .form-foot, .update-note', {max: 12});
+    }
   }
   const home = () => { if (S.current && S.servers.has(S.current)) show('server'); else if (S.servers.size) { S.current = S.servers.keys().next().value; show('server'); } else show('welcome'); };
 
   function setTab(x){
-    S.tab = x;
+    const changed = S.tab !== x || S.tabShownFor !== S.current;
+    S.tab = x; S.tabShownFor = S.current;
     $$('[role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === x));
     ['overview','mods','props','console'].forEach(k => { $('#p-' + k).hidden = k !== x; });
+    if (changed) Motion.enter($('#p-' + x), '.card, .mods-top, .chips, .console > *, details.adv, .form-foot', {max: 12});
     if (x === 'mods') loadMods();
     if (x === 'props') loadProps();
     if (x === 'console') loadLog();
   }
 
   function renderSidebar(){
-    const list = $('#srvList'); list.innerHTML = '';
+    const list = $('#srvList'); list.querySelectorAll('.srv').forEach(n => n.remove());
     for (const s of S.servers.values()){
       const b = document.createElement('button'); b.type = 'button'; b.className = 'srv';
       b.setAttribute('aria-current', S.view === 'server' && s.id === S.current ? 'true' : 'false');
@@ -143,6 +150,9 @@
     const P = (cls, icon, key) => { pill.className = 'pill ' + cls; pill.innerHTML = `<span class="ms fill ${cls === 'warn' ? 'pulse' : ''}">${icon}</span><span>${esc(t(key))}</span>`; };
     extra.innerHTML = ''; acts.innerHTML = '';
     const stopping = S.stopping.has(s.id);
+    const stateKey = s.id + ':' + s.state;
+    const stateChanged = S.lastState !== stateKey;
+    S.lastState = stateKey;
     if (s.state === 'starting'){
       card.style.setProperty('--state-glow', 'var(--accent)');
       P('warn', 'progress_activity', 'stStarting');
@@ -183,6 +193,7 @@
       acts.innerHTML = btn('primary big', 'data-act="start"', 'play_arrow', t('startServer'), true)
         + btn('big', 'data-act="update"', 'update', t('updatePack'));
     }
+    if (stateChanged){ Motion.swap(pill); Motion.swap($('#sTitle')); Motion.swap($('#sLead')); Motion.enter(acts, '.btn', {rise: 6, stagger: 50}); }
     renderAddresses(); renderMemory(); renderLog();
     const on = s.state === 'running';
     $('#cmdIn').disabled = $('#cmdBtn').disabled = !on;
@@ -284,9 +295,9 @@
     const s = srv(); if (!s) return;
     $('#modUrlHelp').textContent = t('onlyCompatible', packVars(s));
     try { S.mods = await api().Mods(s.id); } catch (err){ S.mods = []; toastErr(err); }
-    renderMods();
+    renderMods(true);
   }
-  function renderMods(){
+  function renderMods(animate){
     const q = $('#modSearch').value.trim().toLowerCase();
     const match = m => S.filter === 'all' || m.state === S.filter;
     const list = S.mods.filter(m => match(m) && (!q || m.name.toLowerCase().includes(q) || m.fileName.toLowerCase().includes(q)));
@@ -310,6 +321,7 @@
         <div><b>${esc(m.name)}</b><div class="f" title="${esc(m.fileName)}">${esc(m.fileName)}</div>${status}</div>
         ${action}</div>`;
     }).join('');
+    if (animate === true) Motion.enter(box, '.mod', {max: 16, stagger: 22});
     $$('[data-mod]', box).forEach(b => b.onclick = async () => {
       const m = list[+b.dataset.mod], id = S.current;
       b.disabled = true;
@@ -330,13 +342,14 @@
     $('#restartNote').hidden = !(s && s.state === 'running');
   }
   $('#modSearch').addEventListener('input', renderMods);
-  $$('.chip').forEach(c => c.onclick = () => { S.filter = c.dataset.filter; $$('.chip').forEach(x => x.setAttribute('aria-pressed', x === c)); renderMods(); });
+  $$('.chip').forEach(c => c.onclick = () => { S.filter = c.dataset.filter; $$('.chip').forEach(x => x.setAttribute('aria-pressed', x === c)); renderMods(true); });
 
   /* Add mods panel */
   const addPanel = $('#addPanel');
   let searchTimer, searchToken = 0;
   function toggleAdd(open){
     addPanel.hidden = !open; $('#addModBtn').setAttribute('aria-expanded', open);
+    if (open) Motion.enter(addPanel, null, {rise: 8});
     if (open){ $('#modUrl').value = ''; runSearch(); $('#modUrl').focus(); }
   }
   $('#addModBtn').onclick = () => toggleAdd(addPanel.hidden);
@@ -360,6 +373,7 @@
     $('#modResultsWrap').hidden = false;
     $('#modResultsHead').textContent = head;
     $('#modResults').innerHTML = html;
+    Motion.enter($('#modResults'), '.result', {max: 10, stagger: 26, rise: 6});
   }
   function runSearch(){
     const q = $('#modUrl').value.trim(), s = srv(), token = ++searchToken;
@@ -665,6 +679,7 @@
     $('#setDir').value = st.serversDir || '';
     $('#setKey').value = st.apiKey || '';
     $('#setUpdCheck').checked = !st.skipUpdateCheck;
+    $$('[data-anim-set]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.animSet === (st.animation || ''))));
     $('#verText').textContent = S.update && S.update.dev ? t('versionDev') : t('versionIs', {v: S.app.version});
   }
   async function saveSettings(change){
@@ -678,6 +693,11 @@
   $$('[data-theme-set]').forEach(b => b.onclick = () => { applyTheme(b.dataset.themeSet); saveSettings({theme: b.dataset.themeSet}); renderSettings(); });
   $('#setJava').addEventListener('change', e => saveSettings({autoJava: e.target.checked}));
   $('#setUpdCheck').addEventListener('change', e => saveSettings({skipUpdateCheck: !e.target.checked}));
+  $$('[data-anim-set]').forEach(b => b.onclick = () => {
+    Motion.setScale(b.dataset.animSet);
+    saveSettings({animation: b.dataset.animSet});
+    renderSettings();
+  });
   $('#checkUpd').onclick = () => checkUpdate(true);
   $('#setKey').addEventListener('change', e => { saveSettings({apiKey: e.target.value.trim()}); toast(t('toastSaved')); });
   $('#pickSetDir').onclick = async () => {
@@ -696,6 +716,7 @@
       $('#newTitle').textContent = up ? t('updateTitle', {name: up.name}) : t('newServer'); $('#newMeta').textContent = up ? t('updateMeta') : t('newMeta'); }
     if (S.view === 'progress') paintSetup();
     if (S.view === 'settings') renderSettings();
+    requestAnimationFrame(() => Motion.refresh(false));
   }
   $$('[data-lang-set]').forEach(b => b.onclick = () => setLang(b.dataset.langSet));
 
@@ -721,8 +742,23 @@
     return basic || Object.keys({...a, ...b}).some(k => a[k] !== b[k]);
   }
 
-  function segHTML(options, value){
-    return options.map(([v, key]) => `<button type="button" role="radio" aria-checked="${v === value}" data-v="${v}">${esc(t(key))}</button>`).join('');
+  // Builds the option buttons once and then only updates them, so the glass
+  // lens behind the chosen option can flow to the new one.
+  function fillSeg(el, options, value){
+    let btns = [...el.querySelectorAll('button[data-v]')];
+    if (btns.length !== options.length){
+      btns.forEach(b => b.remove());
+      options.forEach(([v]) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.v = v;
+        el.appendChild(b);
+      });
+      btns = [...el.querySelectorAll('button[data-v]')];
+    }
+    btns.forEach((b, i) => {
+      b.textContent = t(options[i][1]);
+      b.setAttribute('aria-checked', String(options[i][0] === value));
+    });
   }
   function renderProps(){
     const p = S.props; if (!p) return;
@@ -731,8 +767,8 @@
     $('#pMax').value = p.maxPlayers;
     $('#pFlight').checked = p.allowFlight;
     $('#pPvp').checked = p.pvp;
-    $('#pMode').innerHTML = segHTML(GAMEMODES, p.gamemode);
-    $('#pDiff').innerHTML = segHTML(DIFFICULTIES, p.difficulty);
+    fillSeg($('#pMode'), GAMEMODES, p.gamemode);
+    fillSeg($('#pDiff'), DIFFICULTIES, p.difficulty);
     if (document.activeElement !== $('#pMotd')) $('#pMotd').value = p.motd;
     $('#pMotdCount').textContent = `${[...p.motd].length}/59`;
     $('#pSpawn').value = p.spawnProtection;
@@ -932,7 +968,7 @@
   }
   $('#updBtn').onclick = () => {
     const running = [...S.servers.values()].some(s => s.state === 'running' || s.state === 'starting');
-    if (running){ $('#updDlg').hidden = false; $('#updDlgNo').focus(); } else startUpdate();
+    if (running){ $('#updDlg').hidden = false; Motion.pop($('#updDlg .modal')); $('#updDlgNo').focus(); } else startUpdate();
   };
   $('#updDlgNo').onclick = () => { $('#updDlg').hidden = true; };
   $('#updDlgYes').onclick = () => { $('#updDlg').hidden = true; startUpdate(); };
@@ -993,11 +1029,19 @@
     S.app = await api().State();
     const saved = S.app.settings.language;
     lang = saved === 'en' || saved === 'vi' ? saved : (navigator.language || '').toLowerCase().startsWith('vi') ? 'vi' : 'en';
+    Motion.setScale(S.app.settings.animation || '');
     applyTheme(S.app.settings.theme);
     applyStatic();
     for (const s of S.app.servers) S.servers.set(s.id, s);
     S.current = S.app.servers.length ? S.app.servers[0].id : null;
     home(); setTab('overview'); syncMax();
+    const pressed = b => b.getAttribute('aria-pressed') === 'true';
+    Motion.attach($('.tabs'), '[role=tab]', b => b.getAttribute('aria-selected') === 'true');
+    Motion.attach($('#srvList'), '.srv', b => b.getAttribute('aria-current') === 'true');
+    Motion.attach($('.lang-seg'), 'button', pressed);
+    Motion.attach($('#p-mods .chips'), '.chip', pressed);
+    $$('#v-settings .theme-seg').forEach(g => { g.classList.add('lens-accent'); Motion.attach(g, 'button', pressed); });
+    ['#pMode', '#pDiff'].forEach(sel => { $(sel).classList.add('lens-accent'); Motion.attach($(sel), 'button', b => b.getAttribute('aria-checked') === 'true'); });
 
     const on = window.runtime.EventsOn;
     on('setup', onSetup);
@@ -1027,7 +1071,7 @@
       $('#closeTitle').textContent = t(setup ? 'closeSetupTitle' : 'closeTitle');
       $('#closeText').textContent = t(setup ? 'closeSetupText' : 'closeText');
       const b = $('#closeStop'); b.disabled = false; b.lastElementChild.textContent = t(setup ? 'closeSetupStop' : 'closeStop');
-      $('#closeDlg').hidden = false; $('#closeKeep').focus();
+      $('#closeDlg').hidden = false; Motion.pop($('#closeDlg .modal')); $('#closeKeep').focus();
     });
   }
 

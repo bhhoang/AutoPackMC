@@ -127,8 +127,14 @@ func (s *Service) SaveSettings(v Settings) error {
 	if v.ServersDir == "" {
 		v.ServersDir = s.cfg.DefaultServersDir
 	}
+	if !validAnimation[v.Animation] {
+		v.Animation = ""
+	}
 	return s.store.SaveSettings(v)
 }
+
+// validAnimation lists the animation lengths the Settings screen offers.
+var validAnimation = map[string]bool{"": true, "0": true, "0.5": true, "1": true, "1.5": true, "2": true, "3": true, "4": true}
 
 func (s *Service) apiKey() string {
 	if k := s.store.Settings().APIKey; k != "" {
