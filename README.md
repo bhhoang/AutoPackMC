@@ -1,6 +1,31 @@
-# M.A.P.L.E.
+<p align="center">
+  <img src="cmd/maple/build/appicon.png" width="88" alt="">
+</p>
 
-**Maple · Modpack Server**: *Modpacks As Personal servers, Launched Easily.* Turn any Minecraft modpack into a server for you and your friends, from a friendly Windows app or the `mcpackctl` command line. This project was called **AutoPack** / **AutoPackMC** before; see [Renamed from AutoPack](#renamed-from-autopack).
+<h1 align="center">M.A.P.L.E.</h1>
+
+<p align="center">
+  <b>Maple · Modpack Server</b><br>
+  <i>Modpacks As Personal servers, Launched Easily.</i>
+</p>
+
+<p align="center">
+  <a href="https://github.com/bhhoang/Maple/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/bhhoang/Maple?label=release&color=f2ab2a"></a>
+  <a href="https://github.com/bhhoang/Maple/actions/workflows/release.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/bhhoang/Maple/release.yml?branch=main&label=build"></a>
+  <a href="https://github.com/bhhoang/Maple/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/bhhoang/Maple/total?color=2f9e6b"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/bhhoang/Maple?color=4c7fbf"></a>
+  <br>
+  <img alt="Desktop app: Windows 10 and 11" src="https://img.shields.io/badge/app-Windows%2010%20%7C%2011-3a6ea5">
+  <img alt="Command line: Windows, Linux, macOS" src="https://img.shields.io/badge/CLI-Windows%20%7C%20Linux%20%7C%20macOS-555">
+  <img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/bhhoang/Maple">
+  <img alt="Languages: English and Vietnamese" src="https://img.shields.io/badge/lang-English%20%7C%20Ti%E1%BA%BFng%20Vi%E1%BB%87t-8a5cf5">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/overview.webp" width="880" alt="Maple's main window: a running modpack server with two players online, the address friends join with, and a memory slider">
+</p>
+
+Turn any Minecraft modpack into a server for you and your friends, from a friendly Windows app or the `mcpackctl` command line. Paste a CurseForge or Google Drive link, press **Set up**, and share the address. This project was called **AutoPack** / **AutoPackMC** before; see [Renamed from AutoPack](#renamed-from-autopack).
 
 **mcpackctl** is a production-ready Go CLI tool that automatically downloads, configures, and runs Minecraft modpack servers from CurseForge, Google Drive, or raw pack formats using Forge or Fabric loaders.
 
@@ -26,7 +51,24 @@
 
 ## Desktop app (Windows)
 
-**Maple** is a window for people who would rather not use a terminal. It does everything `mcpackctl` does, in English or Vietnamese:
+**Maple** is a window for people who would rather not use a terminal. It does everything `mcpackctl` does, in English or Vietnamese.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/setup.webp" alt="Setting up a modpack: step-by-step progress while 131 of 214 mods download"><br><b>Set up a pack</b>: paste a link and follow the steps.</td>
+    <td width="50%"><img src="docs/screenshots/mods.webp" alt="The Mods tab: mods on the server, mods left off because they only work in your own game, and mods you added"><br><b>Mods</b>: see what is on the server, turn mods off or on, add more.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/server-settings.webp" alt="Server settings: who can join, game mode, difficulty, PvP, flying and spawn protection as simple switches"><br><b>Server settings</b>: <code>server.properties</code> as switches and choices.</td>
+    <td><img src="docs/screenshots/menu.webp" alt="The right-click menu on a server: stop, open folder, server settings, rename, move and remove"><br><b>Quick actions</b>: right-click a server, or use its ⋯ button.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/light.webp" alt="The main window in the light theme"><br><b>Light and dark</b>: follows Windows, or pick one.</td>
+    <td><img src="docs/screenshots/vietnamese.webp" alt="The Settings page in Vietnamese"><br><b>Tiếng Việt</b>: every screen in English or Vietnamese.</td>
+  </tr>
+</table>
+
+What it does:
 
 - **New server** — paste a CurseForge or Google Drive link, or choose a `.zip`, pick a folder and how much memory to give the server, and accept the Minecraft EULA. Progress is shown step by step.
 - **Start and stop** — one button each. Stopping sends `stop`, so the world is saved. Closing the window while a server runs asks first, then stops it cleanly.
