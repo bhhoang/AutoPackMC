@@ -63,6 +63,7 @@ type Service struct {
 	setupCancel context.CancelFunc // non-nil while a setup runs
 	setupDone   chan struct{}      // closed when the running setup has finished
 	setupDir    string             // the folder the running setup works in
+	cleaned     chan struct{}      // closed once old setup leftovers are removed
 
 	// trash moves a folder to the Recycle Bin, and move moves a folder;
 	// tests replace them.
@@ -105,6 +106,17 @@ func New(cfg Config, ui UI) (*Service, error) {
 	s.downloadMod = func(projectID, fileID int, dir string) error {
 		return s.downloaderFor().DownloadOne(projectID, fileID, dir)
 	}
+	// Setups from before they cleaned up after themselves left a second copy
+	// of the pack in the server folder. No setup runs yet, so it is safe to
+	// remove, in the background so the window opens at once.
+	recs := st.Servers()
+	s.cleaned = make(chan struct{})
+	go func() {
+		defer close(s.cleaned)
+		for _, r := range recs {
+			setup.RemoveLeftovers(r.Dir)
+		}
+	}()
 	return s, nil
 }
 
@@ -352,6 +364,7 @@ func (s *Service) StartSetup(req SetupRequest) error {
 			cancel()
 			close(done)
 		}()
+		<-s.cleaned // the startup cleanup must not remove this setup's files
 		s.runSetup(ctx, req)
 	}()
 	return nil

@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"archive/zip"
 	"context"
 	"errors"
 	"os"
@@ -84,5 +85,90 @@ func TestRunStopsWhenCancelled(t *testing.T) {
 func TestRunRejectsBadMemory(t *testing.T) {
 	if _, err := Run(context.Background(), Options{Input: "x", RAM: "lots"}); err == nil {
 		t.Fatal("Run accepted an invalid memory size")
+	}
+}
+
+// zipDir packs dir into a new zip file.
+func zipDir(t *testing.T, dir string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "pack.zip")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	err = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, p)
+		w, err := zw.Create(filepath.ToSlash(rel))
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestRunFromAnArchiveLeavesNoScratchFiles(t *testing.T) {
+	archive := zipDir(t, writeRawPack(t))
+	out := t.TempDir()
+	// Leftovers of an older setup: a stale mod must not reach the server.
+	stale := filepath.Join(out, "_pack_extracted", "mods", "old-removed-mod.jar")
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("jar"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "_pack_download.zip"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Run(context.Background(), Options{Input: archive, Output: out}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, name := range []string{"_pack_extracted", "_pack_download.zip"} {
+		if _, err := os.Stat(filepath.Join(out, name)); !os.IsNotExist(err) {
+			t.Errorf("%s is still in the server folder (stat err %v)", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(out, "mods", "old-removed-mod.jar")); !os.IsNotExist(err) {
+		t.Errorf("a mod from the old unpacked pack reached the server (stat err %v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "mods", "create-0.5.jar")); err != nil {
+		t.Errorf("server mod missing: %v", err)
+	}
+}
+
+func TestRunRemovesScratchFilesWhenItFails(t *testing.T) {
+	out := t.TempDir()
+	notAPack := filepath.Join(t.TempDir(), "empty")
+	if err := os.MkdirAll(notAPack, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(notAPack, "readme.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(context.Background(), Options{Input: zipDir(t, notAPack), Output: out}); err == nil {
+		t.Fatal("a folder with no mods was set up")
+	}
+	if _, err := os.Stat(filepath.Join(out, "_pack_extracted")); !os.IsNotExist(err) {
+		t.Errorf("unpacked pack left behind after a failed setup (stat err %v)", err)
 	}
 }

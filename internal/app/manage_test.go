@@ -143,3 +143,24 @@ func TestMoveServerThatFailsStaysPut(t *testing.T) {
 		t.Fatalf("dir changed to %s", got.Dir)
 	}
 }
+
+func TestStartupRemovesOldSetupLeftovers(t *testing.T) {
+	s, ui := newTestService(t)
+	rec := addServer(t, s, "a.jar")
+	writeFile(t, filepath.Join(rec.Dir, "_pack_extracted", "manifest.json"), "{}")
+	writeFile(t, filepath.Join(rec.Dir, "_pack_download.zip"), "zip")
+
+	again, err := New(s.cfg, ui) // the app starting up
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-again.cleaned
+	for _, name := range []string{"_pack_extracted", "_pack_download.zip"} {
+		if _, err := os.Stat(filepath.Join(rec.Dir, name)); !os.IsNotExist(err) {
+			t.Errorf("%s still there (stat err %v)", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(rec.Dir, "mods", "a.jar")); err != nil {
+		t.Errorf("a mod was removed: %v", err)
+	}
+}

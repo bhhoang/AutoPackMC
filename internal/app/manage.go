@@ -80,6 +80,7 @@ func (s *Service) MoveServer(id, parent string) (ServerView, error) {
 		s.serversMu.Unlock()
 	}()
 
+	<-s.cleaned // the startup cleanup works in the old folder
 	moveErr := s.move(from, to)
 	// Follow the files: if the move stopped part way, the server stays where
 	// its folder still is.
