@@ -107,9 +107,9 @@ button,input,select{font:inherit;color:inherit}
 .side-link:hover,.side-link[aria-current="true"]{background:var(--glass-soft);color:var(--text)}
 
 /* ---------- buttons ---------- */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 20px;border-radius:12px;border:1px solid var(--glass-border);background:var(--glass-card);font-weight:600;font-size:15px;cursor:pointer;white-space:nowrap;transition:transform .15s cubic-bezier(.16,1,.3,1),background-color .2s}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 20px;border-radius:12px;border:1px solid var(--glass-border);background:var(--glass-card);font-weight:600;font-size:15px;cursor:pointer;white-space:nowrap;transition:transform calc(.15s * var(--anim)) cubic-bezier(.16,1,.3,1),background-color calc(.2s * var(--anim))}
 .btn:hover{background:var(--glass-soft)}
-.btn:active{transform:translateY(1px) scale(.985)}
+.btn:active{transform:scale(.965);transition-duration:calc(90ms * var(--anim))}
 .btn.primary{background:var(--accent);border-color:rgba(0,0,0,.08);color:var(--on-accent);box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 6px 18px rgba(242,171,42,.35)}
 .btn.primary:hover{background:var(--accent-hover)}
 .btn.big{height:54px;padding:0 28px;font-size:16.5px;border-radius:14px}
@@ -136,7 +136,7 @@ button,input,select{font:inherit;color:inherit}
 .status{grid-column:1 / -1;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:28px;padding:28px 32px;overflow:hidden}
 .status-main{display:flex;flex-direction:column;gap:10px;min-width:0}
 .side-card{display:flex;flex-direction:column;justify-content:space-between;gap:14px}
-.status .glow{position:absolute;right:30px;top:50%;width:260px;height:260px;transform:translateY(-50%);border-radius:50%;filter:blur(40px);opacity:.55;pointer-events:none;background:var(--state-glow,transparent);transition:background .5s}
+.status .glow{position:absolute;right:30px;top:50%;width:260px;height:260px;transform:translateY(-50%);border-radius:50%;filter:blur(40px);opacity:.55;pointer-events:none;background:var(--state-glow,transparent);transition:background calc(.5s * var(--anim))}
 .pill{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;padding:5px 12px 5px 10px;border-radius:999px;font-size:13px;font-weight:700;background:var(--glass-soft);border:1px solid var(--glass-border);color:var(--text-2)}
 .pill .ms{font-size:17px}
 .pill.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent}
@@ -151,7 +151,7 @@ button,input,select{font:inherit;color:inherit}
 .player{display:inline-flex;align-items:center;gap:8px;padding:4px 12px 4px 4px;border-radius:999px;background:var(--glass-soft);border:1px solid var(--glass-border);font-weight:600;font-size:14px}
 .face{width:26px;height:26px;border-radius:7px;image-rendering:pixelated}
 .bar{height:10px;border-radius:999px;overflow:hidden;background:var(--glass-soft);border:1px solid var(--glass-border)}
-.bar i{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,var(--accent),var(--accent-hover));transition:width .4s cubic-bezier(.16,1,.3,1)}
+.bar i{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,var(--accent),var(--accent-hover));transition:width calc(.4s * var(--anim)) cubic-bezier(.16,1,.3,1)}
 .small{font-size:13.5px;color:var(--text-3)}
 .num{font-variant-numeric:tabular-nums}
 
@@ -219,16 +219,16 @@ input[type=range]{width:100%;margin:0;accent-color:var(--accent);height:24px}
 details.adv{border-radius:18px;border:1px solid var(--glass-border);background:var(--glass-soft)}
 details.adv summary{cursor:pointer;padding:16px 20px;font-weight:600;display:flex;align-items:center;gap:8px;list-style:none}
 details.adv summary::-webkit-details-marker{display:none}
-details.adv summary .ms.chev{margin-left:auto;transition:transform .2s}
+details.adv summary .ms.chev{margin-left:auto;transition:transform calc(.2s * var(--anim))}
 details.adv[open] summary .ms.chev{transform:rotate(180deg)}
 details.adv .inner{padding:0 20px 20px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px}
 details.adv .inner .field.wide{grid-column:1 / -1}
 select.input{appearance:auto}
 .toggle{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:14px}
-.switch{position:relative;width:46px;height:28px;flex:none}
+.switch{position:relative;display:inline-block;vertical-align:middle;width:46px;height:28px;flex:none}
 .switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:1}
-.switch i{position:absolute;inset:0;border-radius:999px;background:var(--field-border);transition:background .2s}
-.switch i::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.16,1,.3,1)}
+.switch i{position:absolute;inset:0;border-radius:999px;background:var(--field-border);transition:background calc(.2s * var(--anim))}
+.switch i::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform calc(.2s * var(--anim)) cubic-bezier(.16,1,.3,1)}
 .switch input:checked + i{background:var(--accent)}
 .switch input:checked + i::after{transform:translateX(18px)}
 .switch input:focus-visible + i{outline:2.5px solid var(--focus);outline-offset:2px}
@@ -244,7 +244,7 @@ select.input{appearance:auto}
 .task.done .ic{background:var(--ok);border-color:var(--ok);color:#fff}
 .task.active .ic{border-color:var(--accent);color:var(--text)}
 .task .ic .ms{font-size:18px}
-.task.active .ic .ms{animation:spin 1.1s linear infinite}
+.task.active .ic .ms{animation:spin calc(1.1s * var(--anim)) linear infinite}
 .task .tl{font-weight:600}
 .task.pending .tl{color:var(--text-3)}
 .task .dt{font-size:13px;color:var(--text-2)}
@@ -252,7 +252,7 @@ select.input{appearance:auto}
 .task .bar{margin-top:8px;height:8px}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes pulse{50%{opacity:.35}}
-.pulse{animation:pulse 1.4s ease-in-out infinite}
+.pulse{animation:pulse calc(1.4s * var(--anim)) ease-in-out infinite}
 
 /* ---------- mods ---------- */
 .mods-top{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
@@ -298,7 +298,7 @@ select.input{appearance:auto}
 .result .sum.warn{color:var(--danger);font-weight:600}
 .result .state{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;color:var(--ok);padding-inline:6px}
 .result .state .ms{font-size:18px}
-.sk{height:62px;border-radius:12px;background:linear-gradient(90deg,var(--glass-soft) 0%,var(--glass-card) 50%,var(--glass-soft) 100%);background-size:200% 100%;animation:shimmer 1.2s linear infinite}
+.sk{height:62px;border-radius:12px;background:linear-gradient(90deg,var(--glass-soft) 0%,var(--glass-card) 50%,var(--glass-soft) 100%);background-size:200% 100%;animation:shimmer calc(1.2s * var(--anim)) linear infinite}
 @keyframes shimmer{to{background-position:-200% 0}}
 .results-empty{padding:14px;border-radius:12px;background:var(--glass-soft);color:var(--text-2);font-size:14px}
 .notice{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:14px;background:var(--accent-soft);border:1px solid var(--glass-border);font-weight:600;font-size:14px}
@@ -333,7 +333,7 @@ select.input{appearance:auto}
 .set-grid .card.wide{grid-column:1 / -1}
 
 /* ---------- toast ---------- */
-.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;font-weight:600;transition:opacity .25s,transform .3s cubic-bezier(.16,1,.3,1);pointer-events:none}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;font-weight:600;transition:opacity calc(.25s * var(--anim)),transform calc(.3s * var(--anim)) cubic-bezier(.16,1,.3,1);pointer-events:none}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .toast .ms{color:var(--ok)}
 
@@ -345,9 +345,7 @@ select.input{appearance:auto}
   .mods{grid-template-columns:1fr}
   .welcome{grid-template-columns:1fr}
 }
-@media (prefers-reduced-motion: reduce){
-  *,*::before,*::after{animation:none!important;transition:none!important}
-}
+[data-motion="off"] *,[data-motion="off"] *::before,[data-motion="off"] *::after{animation:none!important;transition:none!important}
 
 /* ---------- app additions ---------- */
 html,body{height:100%;overflow:hidden}
@@ -355,7 +353,7 @@ body{user-select:none}
 input,textarea,.log,.jarpath,.addr,.f{user-select:text}
 .pack-tile{overflow:hidden}
 .pack-tile img{width:100%;height:100%;object-fit:cover;display:block}
-.bar.indeterminate i{width:35%;animation:slide 1.3s ease-in-out infinite}
+.bar.indeterminate i{width:35%;animation:slide calc(1.3s * var(--anim)) ease-in-out infinite}
 @keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(290%)}}
 .err-card{display:flex;flex-direction:column;gap:12px;padding:24px}
 .err-card h2{font-size:24px}
@@ -386,3 +384,154 @@ button.drop:hover{border-color:var(--accent)}
 @media (prefers-reduced-transparency: reduce){
   .titlebar,.side,.card,details.adv,.tabs,.chip,.notice{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--solid)}
 }
+
+/* Server settings tab */
+.props-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.props-grid .card.wide{grid-column:1 / -1}
+.props-grid .toggle{margin-top:0}
+.props-grid .toggle b{font-size:14.5px}
+.lbl{font-weight:600;font-size:14px}
+.opt-seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.opt-seg.four{grid-template-columns:repeat(4,1fr)}
+.opt-seg button{height:40px;border-radius:12px;border:1.5px solid var(--field-border);background:var(--field);font-weight:600;font-size:13.5px;cursor:pointer;color:var(--text);padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opt-seg button[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.stepper{display:inline-flex;align-items:center;border:1.5px solid var(--field-border);border-radius:12px;background:var(--field);flex:none}
+.stepper button{width:38px;height:40px;border:0;background:transparent;color:var(--text);cursor:pointer;display:grid;place-items:center}
+.stepper button:hover{background:var(--glass-soft)}
+.stepper input{width:52px;height:40px;border:0;background:transparent;text-align:center;font:600 15px var(--font-body);color:var(--text);-moz-appearance:textfield}
+.stepper input::-webkit-inner-spin-button{-webkit-appearance:none}
+.warn-note{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--danger-soft);color:var(--text);font-size:13.5px}
+.warn-note .ms{color:var(--danger);font-size:18px}
+#propsForm .form-foot .link{margin-left:auto;font-size:14px}
+/* Update notice in the sidebar */
+.update-box{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:14px;background:var(--accent-soft);border:1px solid var(--glass-border)}
+.update-head{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;font-weight:600;line-height:1.35}
+.update-head .ms{font-size:18px}
+.update-box .bar{height:6px}
+.head-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.head-link{display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;padding:2px 8px 2px 6px;margin-left:-2px;border-radius:999px;font:600 13px var(--font-body);color:var(--text-2);cursor:pointer}
+.head-link .ms{font-size:16px}
+.head-link:hover{background:var(--glass-soft);color:var(--text)}
+/* The server header keeps its tabs on one row; the name column gives way. */
+#v-server > .head{flex-wrap:nowrap}
+#v-server > .head > div:nth-child(2){flex:1 1 auto;min-width:0}
+#v-server > .head h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#v-server > .head .tabs{flex:none}
+
+/* Advanced server settings */
+.adv-body{padding:0 20px 20px;display:flex;flex-direction:column;gap:14px}
+.adv-groups{columns:2;column-gap:16px}
+.adv-group{break-inside:avoid;margin-bottom:16px;padding:16px 18px;border-radius:16px;background:var(--glass-card);border:1px solid var(--glass-border);box-shadow:inset 0 1px 0 var(--glass-hi);display:flex;flex-direction:column;gap:14px}
+.adv-group h4{margin:0;font:700 15px var(--font-display);display:flex;align-items:center;gap:8px}
+.adv-group h4 .ms{font-size:18px;color:var(--text-3)}
+.prow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:center}
+.prow.wide{grid-template-columns:1fr}
+.prow b{font-size:14px;display:block}
+.pkey{font:500 11.5px var(--font-mono);color:var(--text-3);user-select:text}
+.prow .help{font-size:12.5px;margin-top:2px}
+.prow .input{height:38px;font-size:14px}
+.prow .num-in{width:120px}
+.prow select.input{width:170px}
+.prow.changed b::after{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:7px;vertical-align:2px}
+@media (max-width:900px){.adv-groups{columns:1}}
+
+/* Server picture and how the server looks in the Multiplayer list */
+.list-preview{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;margin-top:12px}
+.mc-row{display:grid;grid-template-columns:64px minmax(0,1fr);gap:12px;align-items:center;padding:8px;border-radius:12px;background:rgba(8,12,20,.55);border:1px solid var(--glass-border)}
+.icon-wrap{position:relative;width:64px;height:64px}
+.mc-icon{width:64px;height:64px;padding:0;cursor:pointer;border-radius:6px;display:grid;place-items:center;background:rgba(255,255,255,.06);border:1.5px dashed rgba(255,255,255,.25);color:rgba(255,255,255,.5);overflow:hidden}
+.mc-icon.has{border:0;background:transparent}
+.mc-icon img{width:64px;height:64px;image-rendering:pixelated;display:block}
+.mc-text{min-width:0;display:flex;flex-direction:column;gap:4px}
+.mc-top{display:flex;align-items:baseline;gap:10px}
+.mc-top b{color:#fff;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-count{margin-left:auto;color:#aab4bd;font:500 12.5px var(--font-mono)}
+.mc-motd{color:#aab4bd;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icon-actions{display:flex;flex-direction:column;gap:8px}
+.icon-actions .btn{justify-content:flex-start}
+.list-preview + .help{margin-top:10px}
+.mc-icon:hover{filter:brightness(1.12)}
+.icon-x{position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;padding:0;display:grid;place-items:center;cursor:pointer;background:rgba(20,26,38,.92);border:1px solid rgba(255,255,255,.35);color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.icon-x .ms{font-size:15px}
+.icon-x:hover{background:var(--danger);border-color:transparent}
+.mc-count{display:inline-flex;align-items:center;gap:4px;cursor:help}
+.mc-count .ms{font-size:15px}
+.pack-tile{position:relative}
+.pack-tile img.over{position:absolute;inset:0}
+
+/* ================================================================ motion + material
+   A web approximation of a liquid glass material (see motion.js). */
+:root{--anim:1;--lens-top:rgba(255,255,255,.85);--lens-mid:rgba(255,255,255,.55);--lens-bottom:rgba(255,255,255,.7)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--lens-top:rgba(255,255,255,.30);--lens-mid:rgba(255,255,255,.07);--lens-bottom:rgba(255,255,255,.16)}}
+:root[data-theme="dark"]{--lens-top:rgba(255,255,255,.30);--lens-mid:rgba(255,255,255,.07);--lens-bottom:rgba(255,255,255,.16)}
+
+/* Buttons: spring back when released; a soft light follows the pointer. */
+.btn{position:relative;overflow:hidden;transition:transform calc(460ms * var(--anim)) cubic-bezier(.34,1.56,.64,1),background-color calc(200ms * var(--anim)),box-shadow calc(200ms * var(--anim)),border-color calc(200ms * var(--anim))}
+.btn::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity calc(260ms * var(--anim));
+  background:radial-gradient(120px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.22),transparent 60%)}
+.btn.lit::after{opacity:1}
+.btn.primary::after{background:radial-gradient(120px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.38),transparent 60%)}
+
+/* Cards: a specular highlight where the pointer is, and a darker lower rim,
+   so the glass reads as a thick pane lit from above. */
+.card{box-shadow:inset 0 1px 0 var(--glass-hi),inset 0 -1px 0 rgba(0,0,0,.14),0 8px 24px var(--shadow)}
+.card::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity calc(360ms * var(--anim));
+  background:radial-gradient(380px circle at var(--mx,50%) var(--my,0%),rgba(255,255,255,.09),transparent 50%)}
+.card.lit::after{opacity:1}
+
+/* Frost: a very fine grain over the whole window, fixed so it costs nothing
+   while scrolling. */
+body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* Liquid lens: a glass drop under the active item of a group. It bends the
+   backdrop at its rim (an SVG displacement map, one per size) and spreads
+   the colours a little, as thick glass does. */
+.has-lens{position:relative;isolation:isolate}
+.has-lens > :not(.lens){position:relative;z-index:1}
+.lens{--lens-filter:blur(0);position:absolute;left:0;top:0;z-index:0;pointer-events:none;will-change:transform,width;
+  background:linear-gradient(180deg,var(--lens-top),var(--lens-mid) 52%,var(--lens-bottom));
+  -webkit-backdrop-filter:var(--lens-filter) saturate(1.7) brightness(1.1);
+  backdrop-filter:var(--lens-filter) saturate(1.7) brightness(1.1);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.8),inset 0 -1px 1px rgba(0,0,0,.2),inset 0 0 0 1px rgba(255,255,255,.2),
+    inset 0 -10px 14px -12px rgba(255,255,255,.45),0 6px 16px -6px var(--shadow);
+  transition:opacity calc(200ms * var(--anim))}
+.lens::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(120% 90% at 30% 0%,rgba(255,255,255,.35),transparent 55%)}
+.lens-accent > .lens{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 38%,transparent),color-mix(in srgb,var(--accent) 14%,transparent) 55%,color-mix(in srgb,var(--accent) 26%,transparent));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 -1px 1px rgba(0,0,0,.2),inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 70%,transparent),0 6px 16px -6px var(--shadow)}
+/* With a lens, the active item itself stays clear. */
+.has-lens > [aria-selected="true"],.has-lens > [aria-pressed="true"],.has-lens > [aria-checked="true"],.has-lens > [aria-current="true"]{
+  background:transparent!important;box-shadow:none!important;border-color:transparent!important}
+@media (prefers-reduced-transparency: reduce){
+  .lens{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--glass-card)}
+  body::after{display:none}
+}
+
+/* Switches: the knob stretches while pressed and springs across. */
+.switch i::after{transition:transform calc(420ms * var(--anim)) cubic-bezier(.34,1.56,.64,1),width calc(220ms * var(--anim)) cubic-bezier(.16,1,.3,1)}
+.switch input:active + i::after{width:28px}
+.switch input:checked:active + i::after{transform:translateX(12px)}
+
+/* Dialogs: the backdrop frosts over while the panel grows in. */
+.modal-back:not([hidden]){animation:backdrop-in calc(260ms * var(--anim)) ease-out}
+@keyframes backdrop-in{from{background:rgba(6,12,24,0);-webkit-backdrop-filter:blur(0);backdrop-filter:blur(0)}}
+.modal-back{-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+
+/* The toast rises out of the glass. */
+.toast{filter:blur(6px)}
+.toast.show{filter:none}
+.toast{transition:opacity calc(260ms * var(--anim)),transform calc(520ms * var(--anim)) cubic-bezier(.2,1.3,.4,1),filter calc(300ms * var(--anim))}
+
+/* Settings: animation length */
+.anim-seg{grid-template-columns:repeat(8,1fr)}
+.anim-seg button{padding:0 4px}
+
+/* Long lists: rows are tinted, not frosted. A backdrop blur per row costs a
+   separate blur layer each, which a pack with hundreds of mods cannot
+   afford; the page behind them is already frosted. Rows off screen skip
+   rendering until scrolled to. */
+.mods .mod.card,.mods .empty.card,.results .result{-webkit-backdrop-filter:none;backdrop-filter:none}
+.mods .mod.card{background:color-mix(in srgb,var(--solid) 66%,transparent);content-visibility:auto;contain-intrinsic-size:auto 66px}
+.mod-sk{height:66px;border-radius:18px}
+.mods .mod.card{box-shadow:inset 0 1px 0 var(--glass-hi),0 2px 6px var(--shadow)}

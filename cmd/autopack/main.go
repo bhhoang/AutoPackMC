@@ -13,6 +13,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -38,6 +40,7 @@ const publicAPIKey = "$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnP
 func main() {
 	// Java runs behind the window, so it must not open console windows.
 	utils.HideChildWindows = true
+	finishUpdate()
 
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -63,6 +66,7 @@ func main() {
 		DefaultAPIKey:     publicAPIKey,
 		ExcludeListSource: downloader.DefaultExcludeListURL,
 		Version:           version,
+		UpdateRepo:        "bhhoang/AutoPackMC",
 	}, ui)
 	if err != nil {
 		logger.Get().Fatal().Err(err).Msg("cannot load saved servers")
@@ -98,6 +102,42 @@ func main() {
 	})
 	if err != nil {
 		logger.Get().Fatal().Err(err).Msg("window failed")
+	}
+}
+
+// finishUpdate runs when this is a new version started by the updater
+// (--after-update <pid>): it waits for the old version to close, so the
+// single-instance lock goes to this process, then deletes the old file.
+func finishUpdate() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	for i, arg := range os.Args {
+		if arg != "--after-update" || i+1 >= len(os.Args) {
+			continue
+		}
+		if pid, err := strconv.Atoi(os.Args[i+1]); err == nil {
+			waitForExit(pid, 30*time.Second)
+		}
+	}
+	app.CleanUpAfterUpdate(exe)
+}
+
+// waitForExit waits up to timeout for process pid to end.
+func waitForExit(pid int, timeout time.Duration) {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		_, _ = proc.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
 	}
 }
 

@@ -45,7 +45,11 @@ type Config struct {
 	DefaultServersDir string
 	DefaultAPIKey     string
 	ExcludeListSource string
-	Version           string
+	Version           string // this build's version, such as v0.2.0; anything else is a development build
+	UpdateRepo        string // GitHub owner/name whose releases hold new versions
+	UpdateAPI         string // GitHub API base; empty means api.github.com (set in tests)
+	ExePath           string // the running executable; empty means os.Executable (set in tests)
+	CurseForgeAPI     string // CurseForge API base; empty means the real one (set in tests)
 }
 
 // Service is bound to the window; each exported method can be called from
@@ -58,6 +62,11 @@ type Service struct {
 	setupMu     sync.Mutex
 	setupCancel context.CancelFunc // non-nil while a setup runs
 	setupDone   chan struct{}      // closed when the running setup has finished
+
+	update updater
+
+	// downloadMod fetches one CurseForge file into dir; tests replace it.
+	downloadMod func(projectID, fileID int, dir string) error
 
 	serversMu sync.Mutex
 	running   map[string]*running // by server ID, while running
@@ -75,14 +84,18 @@ func New(cfg Config, ui UI) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{
+	s := &Service{
 		cfg:     cfg,
 		ui:      ui,
 		store:   st,
 		running: map[string]*running{},
 		logs:    map[string]*logRing{},
 		states:  map[string]*stateView{},
-	}, nil
+	}
+	s.downloadMod = func(projectID, fileID int, dir string) error {
+		return s.downloaderFor().DownloadOne(projectID, fileID, dir)
+	}
+	return s, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -114,8 +127,14 @@ func (s *Service) SaveSettings(v Settings) error {
 	if v.ServersDir == "" {
 		v.ServersDir = s.cfg.DefaultServersDir
 	}
+	if !validAnimation[v.Animation] {
+		v.Animation = ""
+	}
 	return s.store.SaveSettings(v)
 }
+
+// validAnimation lists the animation lengths the Settings screen offers.
+var validAnimation = map[string]bool{"": true, "0": true, "0.5": true, "1": true, "1.5": true, "2": true, "3": true, "4": true}
 
 func (s *Service) apiKey() string {
 	if k := s.store.Settings().APIKey; k != "" {
@@ -124,9 +143,27 @@ func (s *Service) apiKey() string {
 	return s.cfg.DefaultAPIKey
 }
 
-// PickFolder asks for a folder, starting at start.
+// PickFolder asks for a folder, starting at start or, when start does not
+// exist yet (a new server's folder is only made by setup), the nearest
+// folder above it that does. Windows refuses to open the dialog at a missing
+// folder.
 func (s *Service) PickFolder(start string) (string, error) {
-	return s.ui.PickFolder("", start)
+	return s.ui.PickFolder("", existingDir(start))
+}
+
+// existingDir returns dir or its nearest existing parent, or "" if none exists.
+func existingDir(dir string) string {
+	for dir != "" {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+	return ""
 }
 
 // PickPackFile asks for a modpack archive.
@@ -179,7 +216,7 @@ func (s *Service) LookupPack(input string) (*PackPreview, error) {
 	input = strings.TrimSpace(input)
 	switch {
 	case resolver.IsCurseForgeURL(input):
-		p, err := resolver.New(s.apiKey()).PackFromURL(input)
+		p, err := s.resolver().PackFromURL(input)
 		if err != nil {
 			return nil, userError(err)
 		}
@@ -208,6 +245,22 @@ func (s *Service) SuggestServerDir(name string) string {
 	dir := filepath.Join(base, slug)
 	for i := 2; exists(dir); i++ {
 		dir = filepath.Join(base, fmt.Sprintf("%s %d", slug, i))
+	}
+	return dir
+}
+
+// ServerDirIn returns where a server called name goes when the user picks
+// parent: parent itself when it is empty, or else a new folder named after
+// the pack inside it, so the server's files never mix with other files.
+func (s *Service) ServerDirIn(parent, name string) string {
+	entries, err := os.ReadDir(parent)
+	if err != nil || len(entries) == 0 {
+		return parent
+	}
+	slug := safeFolderName(name)
+	dir := filepath.Join(parent, slug)
+	for i := 2; exists(dir); i++ {
+		dir = filepath.Join(parent, fmt.Sprintf("%s %d", slug, i))
 	}
 	return dir
 }
@@ -382,7 +435,7 @@ func (s *Service) runSetup(ctx context.Context, req SetupRequest) {
 	}
 	var logo string
 	if resolver.IsCurseForgeURL(opts.Input) {
-		if p, err := resolver.New(s.apiKey()).PackFromURL(opts.Input); err == nil {
+		if p, err := s.resolver().PackFromURL(opts.Input); err == nil {
 			logo = p.LogoURL
 		}
 	}
@@ -543,6 +596,15 @@ func safeFolderName(name string) string {
 		return "Minecraft server"
 	}
 	return name
+}
+
+// resolver returns a CurseForge client using the configured key.
+func (s *Service) resolver() *resolver.Resolver {
+	r := resolver.New(s.apiKey())
+	if s.cfg.CurseForgeAPI != "" {
+		r.WithBaseURL(s.cfg.CurseForgeAPI)
+	}
+	return r
 }
 
 // downloaderFor returns a downloader for adding single mods.

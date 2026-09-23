@@ -49,6 +49,10 @@
     quiet: new Set(),       // servers restarting: no "stopped" toast
     form: null,
     setup: null,
+    props: null,            // Server settings tab: edited values
+    propsSaved: null,       // ... and the values on disk
+    update: null,           // result of the last update check
+    updating: false,
   };
   const srv = () => S.servers.get(S.current);
   const packVars = s => ({mc: s?.mc || '?', loader: loaderName(s?.loader)});
@@ -76,7 +80,9 @@
       img.src = logo;
     }
   }
-  const tileHTML = (name, logo) => `<div class="pack-tile" style="background:hsl(${hue(name)} 35% 42%)">${logo ? `<img alt="" referrerpolicy="no-referrer" src="${esc(logo)}" onerror="this.remove()">` : ''}${logo ? '' : esc((String(name || '?').trim()[0] || '?').toUpperCase())}</div>`;
+  // The letter is always there, under the picture, so a picture that fails to
+  // load still leaves a readable tile.
+  const tileHTML = (name, logo) => `<div class="pack-tile" style="background:hsl(${hue(name)} 35% 42%)">${esc((String(name || '?').trim()[0] || '?').toUpperCase())}${logo ? `<img class="over" alt="" referrerpolicy="no-referrer" src="${esc(logo)}" onerror="this.remove()">` : ''}</div>`;
 
   function face(name){ // an 8x8 pixel face per player name
     const c = document.createElement('canvas'); c.width = c.height = 8; const x = c.getContext('2d');
@@ -89,25 +95,35 @@
 
   /* ------------------------------------------------ navigation */
   function show(v){
+    const changed = S.view !== v;
     S.view = v;
     ['welcome','server','new','progress','settings'].forEach(k => { $('#v-' + k).hidden = k !== v; });
     if (v === 'server') renderServer();
     if (v === 'settings') renderSettings();
     renderSidebar();
     $('#main').scrollTop = 0;
+    if (changed){
+      const sec = $('#v-' + v);
+      Motion.enter(sec, v === 'server' ? ':scope > .head' : '.card, .head, .form-foot, .update-note', {max: 12});
+    }
   }
   const home = () => { if (S.current && S.servers.has(S.current)) show('server'); else if (S.servers.size) { S.current = S.servers.keys().next().value; show('server'); } else show('welcome'); };
 
   function setTab(x){
-    S.tab = x;
+    const changed = S.tab !== x || S.tabShownFor !== S.current;
+    S.tab = x; S.tabShownFor = S.current;
     $$('[role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === x));
-    ['overview','mods','console'].forEach(k => { $('#p-' + k).hidden = k !== x; });
+    ['overview','mods','props','console'].forEach(k => { $('#p-' + k).hidden = k !== x; });
+    // The mod list animates itself once it has loaded, so the panel only
+    // animates its fixed parts.
+    if (changed) Motion.enter($('#p-' + x), x === 'mods' ? '.mods-top, .chips' : '.card, .console > *, details.adv, .form-foot', {max: 12});
     if (x === 'mods') loadMods();
+    if (x === 'props') loadProps();
     if (x === 'console') loadLog();
   }
 
   function renderSidebar(){
-    const list = $('#srvList'); list.innerHTML = '';
+    const list = $('#srvList'); list.querySelectorAll('.srv').forEach(n => n.remove());
     for (const s of S.servers.values()){
       const b = document.createElement('button'); b.type = 'button'; b.className = 'srv';
       b.setAttribute('aria-current', S.view === 'server' && s.id === S.current ? 'true' : 'false');
@@ -117,8 +133,8 @@
         running: `<span class="live">${esc(t('sideOnline'))}</span>${s.players.length ? ', ' + esc(t('sidePlaying', {n: s.players.length})) : ''}`,
         crashed: `<span class="bad">${esc(t('sideAttention'))}</span>`,
       }[s.state] || '';
-      b.innerHTML = `${tileHTML(s.name, s.logoUrl)}<div><div class="t">${esc(s.name)}</div><div class="s">${st}</div></div>`;
-      b.onclick = () => { S.current = s.id; S.mods = []; show('server'); setTab(S.tab); };
+      b.innerHTML = `${tileHTML(s.name, s.icon || s.logoUrl)}<div><div class="t">${esc(s.name)}</div><div class="s">${st}</div></div>`;
+      b.onclick = () => { S.current = s.id; S.modsFor = null; S.props = S.propsSaved = null; show('server'); setTab(S.tab); };
       list.appendChild(b);
     }
     $('#settingsBtn').setAttribute('aria-current', S.view === 'settings');
@@ -129,13 +145,16 @@
 
   function renderServer(){
     const s = srv(); if (!s) return home();
-    tile($('#hTile'), s.name, s.logoUrl);
-    $('#hName').textContent = s.name;
+    tile($('#hTile'), s.name, s.icon || s.logoUrl);
+    $('#hName').textContent = s.name; $('#hName').title = s.name;
     $('#hMeta').textContent = t('mcWith', packVars(s));
     const card = $('#statusCard'), pill = $('#sPill'), acts = $('#sActions'), extra = $('#sExtra');
     const P = (cls, icon, key) => { pill.className = 'pill ' + cls; pill.innerHTML = `<span class="ms fill ${cls === 'warn' ? 'pulse' : ''}">${icon}</span><span>${esc(t(key))}</span>`; };
     extra.innerHTML = ''; acts.innerHTML = '';
     const stopping = S.stopping.has(s.id);
+    const stateKey = s.id + ':' + s.state;
+    const stateChanged = S.lastState !== stateKey;
+    S.lastState = stateKey;
     if (s.state === 'starting'){
       card.style.setProperty('--state-glow', 'var(--accent)');
       P('warn', 'progress_activity', 'stStarting');
@@ -176,11 +195,12 @@
       acts.innerHTML = btn('primary big', 'data-act="start"', 'play_arrow', t('startServer'), true)
         + btn('big', 'data-act="update"', 'update', t('updatePack'));
     }
+    if (stateChanged){ Motion.swap(pill); Motion.swap($('#sTitle')); Motion.swap($('#sLead')); Motion.enter(acts, '.btn', {rise: 6, stagger: 50}); }
     renderAddresses(); renderMemory(); renderLog();
     const on = s.state === 'running';
     $('#cmdIn').disabled = $('#cmdBtn').disabled = !on;
     $('#cmdHint').textContent = t(on ? 'cmdOn' : 'cmdOff');
-    if (s.state !== 'running') $('#restartNote').hidden = true;
+    if (s.state !== 'running'){ $('#restartNote').hidden = true; $('#propsNote').hidden = true; }
   }
 
   function renderAddresses(){
@@ -268,17 +288,29 @@
       }
       if (a === 'fix'){ await api().FixCrash(s.id); }
       if (a === 'update'){ openForm(s.id); }
+      if (a === 'folder'){ api().OpenServerFolder(s.id); }
     } catch (err){ S.stopping.delete(s.id); renderServer(); toastErr(err); }
   }
 
   /* ------------------------------------------------ mods */
+  // A list already loaded for this server shows at once and refreshes
+  // quietly; the first load shows placeholder rows, never "no mods".
   async function loadMods(){
     const s = srv(); if (!s) return;
     $('#modUrlHelp').textContent = t('onlyCompatible', packVars(s));
-    try { S.mods = await api().Mods(s.id); } catch (err){ S.mods = []; toastErr(err); }
-    renderMods();
+    const first = S.modsFor !== s.id;
+    if (first){
+      S.mods = []; S.modsFor = null;
+      $('#modList').innerHTML = '<div class="sk mod-sk"></div>'.repeat(6);
+    } else renderMods();
+    const token = (S.modsToken = (S.modsToken || 0) + 1);
+    let mods;
+    try { mods = await api().Mods(s.id); } catch (err){ mods = []; toastErr(err); }
+    if (token !== S.modsToken || S.current !== s.id) return; // switched away meanwhile
+    S.mods = mods; S.modsFor = s.id;
+    renderMods(first);
   }
-  function renderMods(){
+  function renderMods(animate){
     const q = $('#modSearch').value.trim().toLowerCase();
     const match = m => S.filter === 'all' || m.state === S.filter;
     const list = S.mods.filter(m => match(m) && (!q || m.name.toLowerCase().includes(q) || m.fileName.toLowerCase().includes(q)));
@@ -289,38 +321,66 @@
       return;
     }
     const why = {client: 'whyClient', list: 'whyList', you: 'whyYou'};
-    box.innerHTML = list.map((m, i) => {
-      const status = m.state === 'mine' ? `<div class="why mine">${esc(t('addedByYou'))}</div>`
+    const rows = list.map((m, i) => {
+      // A mod added only because another added mod needs it goes away with
+      // that mod, so it has no button of its own.
+      const dep = m.state === 'mine' && m.reason === 'dep';
+      const status = dep ? `<div class="why mine">${esc(t('neededBy', {names: (m.neededBy || []).join(', ')}))}</div>`
+        : m.state === 'mine' ? `<div class="why mine">${esc(t('addedByYou'))}</div>`
         : `<div class="why ${m.state === 'on' ? 'on' : 'off'}">${esc(m.state === 'on' ? t('onServer') : t('leftOffWhy', {why: t(why[m.reason] || 'whyYou')}))}</div>`;
       const label = t(m.state === 'mine' ? 'remove' : m.state === 'on' ? 'leaveOff' : 'keepAnyway');
+      const action = dep ? '<span></span>' : `<button class="btn sm" type="button" data-mod="${i}">${esc(label)}</button>`;
       return `<div class="card mod${m.state === 'off' ? ' removed' : ''}">${tileHTML(m.name)}
         <div><b>${esc(m.name)}</b><div class="f" title="${esc(m.fileName)}">${esc(m.fileName)}</div>${status}</div>
-        <button class="btn sm" type="button" data-mod="${i}">${esc(label)}</button></div>`;
-    }).join('');
-    $$('[data-mod]', box).forEach(b => b.onclick = async () => {
-      const m = list[+b.dataset.mod], id = S.current;
+        ${action}</div>`;
+    });
+    // The first screenful now; the rest once the rows have settled in, a
+    // few at a time, so a pack with hundreds of mods never holds up a frame.
+    S.modRows = list;
+    const token = (S.modRender = (S.modRender || 0) + 1);
+    box.innerHTML = rows.slice(0, 16).join('');
+    if (animate === true) Motion.enter(box, '.mod', {max: 12, stagger: 22});
+    let at = 16;
+    const more = () => {
+      if (token !== S.modRender || at >= rows.length) return;
+      box.insertAdjacentHTML('beforeend', rows.slice(at, at + 30).join(''));
+      at += 30;
+      requestAnimationFrame(() => setTimeout(more));
+    };
+    if (rows.length > at) setTimeout(more, animate === true ? Motion.ms(500) : 0);
+  }
+  // One click handler for every row's button.
+  $('#modList').addEventListener('click', async e => {
+    const b = e.target.closest('[data-mod]'); if (!b || b.disabled) return;
+    const m = S.modRows[+b.dataset.mod], id = S.current;
+    if (!m) return;
+    {
       b.disabled = true;
       try {
-        if (m.state === 'mine'){ await api().RemoveMod(id, m.fileName); toast(t('toastRemoved', {name: m.name})); }
+        if (m.state === 'mine'){
+          const deps = await api().RemoveMod(id, m.fileName);
+          toast(deps && deps.length ? t('toastRemovedDeps', {name: m.name, deps: deps.join(', ')}) : t('toastRemoved', {name: m.name}));
+        }
         else if (m.state === 'on'){ await api().SetModOff(id, m.fileName); toast(t('toastWillBeOff', {name: m.name})); }
         else { b.textContent = t('adding'); await api().SetModOn(id, m.fileName); toast(t('toastWillBeOn', {name: m.name})); }
         modsChanged();
       } catch (err){ toastErr(err); b.disabled = false; }
       loadMods();
-    });
-  }
+    }
+  });
   function modsChanged(){
     const s = srv();
     $('#restartNote').hidden = !(s && s.state === 'running');
   }
   $('#modSearch').addEventListener('input', renderMods);
-  $$('.chip').forEach(c => c.onclick = () => { S.filter = c.dataset.filter; $$('.chip').forEach(x => x.setAttribute('aria-pressed', x === c)); renderMods(); });
+  $$('.chip').forEach(c => c.onclick = () => { S.filter = c.dataset.filter; $$('.chip').forEach(x => x.setAttribute('aria-pressed', x === c)); renderMods(true); });
 
   /* Add mods panel */
   const addPanel = $('#addPanel');
   let searchTimer, searchToken = 0;
   function toggleAdd(open){
     addPanel.hidden = !open; $('#addModBtn').setAttribute('aria-expanded', open);
+    if (open) Motion.enter(addPanel, null, {rise: 8});
     if (open){ $('#modUrl').value = ''; runSearch(); $('#modUrl').focus(); }
   }
   $('#addModBtn').onclick = () => toggleAdd(addPanel.hidden);
@@ -344,6 +404,7 @@
     $('#modResultsWrap').hidden = false;
     $('#modResultsHead').textContent = head;
     $('#modResults').innerHTML = html;
+    Motion.enter($('#modResults'), '.result', {max: 10, stagger: 26, rise: 6});
   }
   function runSearch(){
     const q = $('#modUrl').value.trim(), s = srv(), token = ++searchToken;
@@ -389,7 +450,8 @@
       const r = await api().AddMod(s.id, id, name, force);
       if (r.status === 'added' || r.status === 'already'){
         b.outerHTML = `<span class="state"><span class="ms">check_circle</span>${esc(t(r.status === 'added' ? 'added' : 'onServer'))}</span>`;
-        toast(t(r.status === 'added' ? 'toastAdded' : 'toastAlready', {name}));
+        toast(r.status === 'already' ? t('toastAlready', {name})
+          : r.deps && r.deps.length ? t('toastAddedDeps', {name, deps: r.deps.join(', ')}) : t('toastAdded', {name}));
         modsChanged(); loadMods();
       } else if (r.status === 'client_only'){
         b.disabled = false; b.dataset.force = '1'; b.textContent = t('addAnyway');
@@ -398,8 +460,15 @@
       } else if (r.status === 'no_version'){
         b.disabled = false; b.textContent = label;
         toast(t('err_no_version', {name, ...packVars(s)}), true);
+      } else if (r.status === 'dep_missing'){
+        b.disabled = false; b.textContent = label;
+        toast(t('depMissing', {name, dep: r.missing, ...packVars(s)}), true);
       }
-    } catch (err){ b.disabled = false; b.textContent = label; toastErr(err); }
+    } catch (err){
+      b.disabled = false; b.textContent = label;
+      const e = parseErr(err);
+      toast(errText(e, {name: e.detail || name}), true);
+    }
   });
 
   async function addJars(paths){
@@ -500,7 +569,13 @@
     try { const p = await api().PickPackFile(); if (p){ $('#packUrl').value = p; lookupPack(); } } catch (err){ toastErr(err); }
   };
   $('#pickDir').onclick = async () => {
-    try { const d = await api().PickFolder(S.form.dir); if (d){ S.form.dir = d; S.form.dirTouched = true; $('#outDir').value = d; validate(); } } catch (err){ toastErr(err); }
+    try {
+      const d = await api().PickFolder(S.form.dir);
+      if (!d) return;
+      const name = (S.form.preview && S.form.preview.name) || 'Minecraft server';
+      S.form.dir = await api().ServerDirIn(d, name);
+      S.form.dirTouched = true; $('#outDir').value = S.form.dir; validate();
+    } catch (err){ toastErr(err); }
   };
   $('#optJava').addEventListener('change', async e => {
     if (e.target.value !== 'pick') return;
@@ -634,7 +709,9 @@
     $('#setJava').checked = st.autoJava;
     $('#setDir').value = st.serversDir || '';
     $('#setKey').value = st.apiKey || '';
-    $('#version').textContent = t('version', {v: S.app.version});
+    $('#setUpdCheck').checked = !st.skipUpdateCheck;
+    $$('[data-anim-set]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.animSet === (st.animation || ''))));
+    $('#verText').textContent = S.update && S.update.dev ? t('versionDev') : t('versionIs', {v: S.app.version});
   }
   async function saveSettings(change){
     Object.assign(S.app.settings, change);
@@ -646,6 +723,13 @@
   }
   $$('[data-theme-set]').forEach(b => b.onclick = () => { applyTheme(b.dataset.themeSet); saveSettings({theme: b.dataset.themeSet}); renderSettings(); });
   $('#setJava').addEventListener('change', e => saveSettings({autoJava: e.target.checked}));
+  $('#setUpdCheck').addEventListener('change', e => saveSettings({skipUpdateCheck: !e.target.checked}));
+  $$('[data-anim-set]').forEach(b => b.onclick = () => {
+    Motion.setScale(b.dataset.animSet);
+    saveSettings({animation: b.dataset.animSet});
+    renderSettings();
+  });
+  $('#checkUpd').onclick = () => checkUpdate(true);
   $('#setKey').addEventListener('change', e => { saveSettings({apiKey: e.target.value.trim()}); toast(t('toastSaved')); });
   $('#pickSetDir').onclick = async () => {
     try { const d = await api().PickFolder(S.app.settings.serversDir); if (d){ await saveSettings({serversDir: d}); renderSettings(); } } catch (err){ toastErr(err); }
@@ -656,14 +740,269 @@
     saveSettings({language: l});
     applyStatic();
     renderSidebar();
-    if (S.view === 'server'){ renderServer(); if (S.tab === 'mods'){ renderMods(); $('#modUrlHelp').textContent = t('onlyCompatible', packVars(srv())); if (!addPanel.hidden) runSearch(); } }
+    renderUpdate();
+    if (S.view === 'server'){ renderServer(); if (S.tab === 'props' && S.props){ buildAdvanced(); renderProps(); } if (S.tab === 'mods'){ renderMods(); $('#modUrlHelp').textContent = t('onlyCompatible', packVars(srv())); if (!addPanel.hidden) runSearch(); } }
     if (S.view === 'new'){ $('#setupBtnTxt').textContent = t(S.form.update ? 'updateBtn' : 'setUp'); renderRAM(); validate();
       const up = S.form.update && S.servers.get(S.form.update);
       $('#newTitle').textContent = up ? t('updateTitle', {name: up.name}) : t('newServer'); $('#newMeta').textContent = up ? t('updateMeta') : t('newMeta'); }
     if (S.view === 'progress') paintSetup();
     if (S.view === 'settings') renderSettings();
+    requestAnimationFrame(() => Motion.refresh(false));
   }
   $$('[data-lang-set]').forEach(b => b.onclick = () => setLang(b.dataset.langSet));
+
+  /* ------------------------------------------------ server settings tab */
+  const GAMEMODES = [['survival', 'gmSurvival'], ['creative', 'gmCreative'], ['adventure', 'gmAdventure']];
+  const DIFFICULTIES = [['peaceful', 'dPeaceful'], ['easy', 'dEasy'], ['normal', 'dNormal'], ['hard', 'dHard']];
+
+  async function loadProps(){
+    const s = srv(); if (!s) return;
+    if (S.props && S.props.id === s.id) return renderProps(); // keep unsaved edits
+    try {
+      const p = await api().ServerProperties(s.id);
+      p.other = p.other || {};
+      S.propsSaved = {...p, other: {...p.other}}; S.props = {...p, other: {...p.other}, id: s.id};
+      buildAdvanced();
+      renderProps();
+    } catch (err){ toastErr(err); }
+  }
+  function propsDirty(){
+    if (!S.props || !S.propsSaved) return false;
+    const basic = Object.keys(S.propsSaved).filter(k => k !== 'other').some(k => S.props[k] !== S.propsSaved[k]);
+    const a = S.props.other, b = S.propsSaved.other;
+    return basic || Object.keys({...a, ...b}).some(k => a[k] !== b[k]);
+  }
+
+  // Builds the option buttons once and then only updates them, so the glass
+  // lens behind the chosen option can flow to the new one.
+  function fillSeg(el, options, value){
+    let btns = [...el.querySelectorAll('button[data-v]')];
+    if (btns.length !== options.length){
+      btns.forEach(b => b.remove());
+      options.forEach(([v]) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.v = v;
+        el.appendChild(b);
+      });
+      btns = [...el.querySelectorAll('button[data-v]')];
+    }
+    btns.forEach((b, i) => {
+      b.textContent = t(options[i][1]);
+      b.setAttribute('aria-checked', String(options[i][0] === value));
+    });
+  }
+  function renderProps(){
+    const p = S.props; if (!p) return;
+    $('#pOnline').checked = p.onlineMode;
+    $('#pOnlineWarn').hidden = p.onlineMode;
+    $('#pMax').value = p.maxPlayers;
+    $('#pFlight').checked = p.allowFlight;
+    $('#pPvp').checked = p.pvp;
+    fillSeg($('#pMode'), GAMEMODES, p.gamemode);
+    fillSeg($('#pDiff'), DIFFICULTIES, p.difficulty);
+    if (document.activeElement !== $('#pMotd')) $('#pMotd').value = p.motd;
+    $('#pMotdCount').textContent = `${[...p.motd].length}/59`;
+    $('#pSpawn').value = p.spawnProtection;
+    renderIcon();
+    renderAdvanced();
+    const dirty = propsDirty();
+    $('#propsSave').disabled = !dirty; $('#propsUndo').disabled = !dirty;
+  }
+  function setProp(k, v){ S.props[k] = v; renderProps(); }
+  $('#pOnline').addEventListener('change', e => setProp('onlineMode', e.target.checked));
+  $('#pFlight').addEventListener('change', e => setProp('allowFlight', e.target.checked));
+  $('#pPvp').addEventListener('change', e => setProp('pvp', e.target.checked));
+  $('#pMotd').addEventListener('input', e => setProp('motd', e.target.value));
+  $('#pMax').addEventListener('change', e => setProp('maxPlayers', Math.max(1, Math.min(1000, parseInt(e.target.value, 10) || 1))));
+  $$('#p-props [data-step]').forEach(b => b.onclick = () => setProp('maxPlayers', Math.max(1, Math.min(1000, S.props.maxPlayers + +b.dataset.step))));
+  $('#pSpawn').addEventListener('change', e => setProp('spawnProtection', Math.max(0, Math.min(100000, parseInt(e.target.value, 10) || 0))));
+  $$('#p-props [data-spawn]').forEach(b => b.onclick = () => setProp('spawnProtection', Math.max(0, Math.min(100000, S.props.spawnProtection + +b.dataset.spawn))));
+
+  /* Server picture */
+  function renderIcon(){
+    const s = srv(); if (!s || !S.props) return;
+    const box = $('#pIcon');
+    box.classList.toggle('has', !!s.icon);
+    box.innerHTML = s.icon ? `<img alt="" src="${s.icon}">` : '<span class="ms">image</span>';
+    $('#pvName').textContent = s.name;
+    $('#pvCount').textContent = `${s.players.length}/${S.props.maxPlayers}`;
+    $('#pvCountWrap').title = t('playerCountTip', {n: s.players.length, max: S.props.maxPlayers});
+    $('#pvMotd').textContent = S.props.motd;
+    $('#iconRemove').hidden = !s.icon;
+    $('#iconLogo').hidden = !s.logoUrl;
+  }
+  async function changeIcon(run, removed){
+    const s = srv(); if (!s) return;
+    try {
+      const url = await run(s.id);
+      if (url === '' && !removed) return; // the user cancelled the dialog
+      s.icon = removed ? '' : url;
+      renderIcon(); renderSidebar(); tile($('#hTile'), s.name, s.icon || s.logoUrl);
+      toast(t(removed ? 'toastIconRemoved' : 'toastIconSaved'));
+      if (s.state === 'running' || s.state === 'starting'){ $('#propsNote').hidden = false; }
+    } catch (err){ toastErr(err); }
+  }
+  $('#iconPick').onclick = $('#pIcon').onclick = () => changeIcon(id => api().PickServerIcon(id));
+  $('#iconLogo').onclick = () => changeIcon(id => api().UseModpackLogoAsIcon(id));
+  $('#iconRemove').onclick = () => changeIcon(id => api().RemoveServerIcon(id).then(() => ''), true);
+
+  /* Advanced settings: every other key in server.properties */
+  const schemaByKey = Object.fromEntries(PROP_SCHEMA.map(k => [k.key, k]));
+  // The rows shown for this server: every known key, plus keys it has that
+  // are not known (added by mods or a newer Minecraft).
+  function advancedKeys(){
+    const unknown = Object.keys(S.propsSaved ? S.propsSaved.other : {}).filter(k => !schemaByKey[k]).sort()
+      .map(k => ({key: k, group: 'other', type: 'text', def: '', unknown: true}));
+    return PROP_SCHEMA.concat(unknown);
+  }
+  const advValue = k => (k.key in S.props.other ? S.props.other[k.key] : k.def);
+  function controlHTML(k, id){
+    const v = advValue(k);
+    if (k.type === 'bool') return `<span class="switch"><input type="checkbox" id="${id}" ${v === 'true' ? 'checked' : ''}><i></i></span>`;
+    if (k.type === 'int') return `<input class="input num-in" id="${id}" type="number" inputmode="numeric" min="${k.min}" max="${k.max}" value="${esc(v)}">`;
+    if (k.type === 'enum') return `<select class="input" id="${id}">${k.options.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    const list = k.suggest ? ` list="${id}-list"` : '';
+    const opts = k.suggest ? `<datalist id="${id}-list">${k.suggest.map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
+    return `<input class="input" id="${id}" type="${k.type === 'secret' ? 'password' : 'text'}" value="${esc(v)}" autocomplete="off"${list}>${opts}`;
+  }
+  function buildAdvanced(){
+    const keys = advancedKeys();
+    $('#advGroups').innerHTML = PROP_GROUPS.map(g => {
+      const rows = keys.filter(k => k.group === g.id);
+      if (!rows.length) return '';
+      return `<section class="adv-group" data-group="${g.id}"><h4><span class="ms">${g.icon}</span><span>${esc(g[lang] || g.en)}</span></h4>${rows.map(k => {
+        const [label, help] = k.unknown ? [k.key, t('advUnknown')] : (k[lang] || k.en);
+        const id = 'adv-' + k.key.replace(/[^a-z0-9]/gi, '_');
+        const wide = k.type === 'text' || k.type === 'secret';
+        const search = (label + ' ' + k.key + ' ' + help).toLowerCase();
+        return `<div class="prow${wide ? ' wide' : ''}" data-key="${esc(k.key)}" data-search="${esc(search)}">
+          <div><label for="${id}"><b>${esc(label)}</b></label><span class="pkey">${esc(k.key)}</span><div class="help">${esc(help)}</div></div>
+          <div>${controlHTML(k, id)}</div></div>`;
+      }).join('')}</section>`;
+    }).join('');
+    filterAdvanced();
+  }
+  // Refreshes values and the changed markers without rebuilding the rows.
+  function renderAdvanced(){
+    if (!S.props) return;
+    $$('#advGroups .prow').forEach(row => {
+      const k = schemaByKey[row.dataset.key] || {key: row.dataset.key, type: 'text', def: ''};
+      const el = row.querySelector('input,select');
+      const v = advValue(k);
+      if (document.activeElement !== el){
+        if (k.type === 'bool') el.checked = v === 'true'; else el.value = v;
+      }
+      const saved = k.key in S.propsSaved.other ? S.propsSaved.other[k.key] : k.def;
+      row.classList.toggle('changed', v !== saved);
+    });
+  }
+  function setAdvanced(key, value){
+    const k = schemaByKey[key] || {key, def: ''};
+    // Leave keys that are not in the file out of it while they hold the default.
+    if (!(key in S.propsSaved.other) && value === k.def) delete S.props.other[key];
+    else S.props.other[key] = value;
+    renderProps();
+  }
+  function onAdvancedInput(e){
+    const row = e.target.closest('.prow'); if (!row) return;
+    const k = schemaByKey[row.dataset.key] || {type: 'text'};
+    let v = k.type === 'bool' ? String(e.target.checked) : e.target.value;
+    if (k.type === 'int'){
+      if (e.type === 'input') return; // wait for the whole number
+      const n = parseInt(v, 10);
+      v = String(Number.isNaN(n) ? k.def : Math.max(k.min, Math.min(k.max, n)));
+      e.target.value = v;
+    }
+    setAdvanced(row.dataset.key, v);
+  }
+  $('#advGroups').addEventListener('input', onAdvancedInput);
+  $('#advGroups').addEventListener('change', onAdvancedInput);
+  function filterAdvanced(){
+    const q = $('#propsSearch').value.trim().toLowerCase();
+    let shown = 0;
+    $$('#advGroups .adv-group').forEach(g => {
+      let n = 0;
+      g.querySelectorAll('.prow').forEach(r => { const hit = !q || r.dataset.search.includes(q); r.hidden = !hit; if (hit) n++; });
+      g.hidden = n === 0; shown += n;
+    });
+    $('#advEmpty').hidden = shown > 0;
+    $('#advEmpty').textContent = t('advNone', {q});
+    if (q) $('#propsAdv').open = true;
+  }
+  $('#propsSearch').addEventListener('input', filterAdvanced);
+  $('#pMode').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) setProp('gamemode', b.dataset.v); });
+  $('#pDiff').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) setProp('difficulty', b.dataset.v); });
+  $('#propsUndo').onclick = () => {
+    S.props = {...S.propsSaved, other: {...S.propsSaved.other}, id: S.props.id};
+    $('#pMotd').value = S.props.motd;
+    $$('#advGroups .prow input, #advGroups .prow select').forEach(el => el.blur());
+    renderProps();
+  };
+  $('#propsFile').onclick = () => api().OpenServerProperties(S.current);
+  $('#propsForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!propsDirty()) return;
+    const {id, ...values} = S.props;
+    // Only changed advanced keys are sent; the server keeps every other line.
+    const changed = {};
+    for (const [k, v] of Object.entries(values.other)) if (S.propsSaved.other[k] !== v) changed[k] = v;
+    $('#propsSave').disabled = true;
+    try {
+      await api().SetServerProperties(id, {...values, other: changed});
+      S.propsSaved = {...values, other: {...values.other}};
+      toast(t('toastPropsSaved'));
+      const s = srv();
+      $('#propsNote').hidden = !(s && s.state === 'running');
+    } catch (err){ toastErr(err); }
+    renderProps();
+  });
+
+  /* ------------------------------------------------ AutoPack updates */
+  async function checkUpdate(manual){
+    if (manual){ $('#updStatus').textContent = t('checking'); $('#checkUpd').disabled = true; }
+    try {
+      S.update = await api().CheckForUpdate();
+      if (manual) $('#updStatus').textContent = S.update.dev ? t('versionDev') : S.update.available ? t('updAvailable', {v: S.update.latest}) : t('upToDate');
+    } catch (err){
+      if (manual) $('#updStatus').textContent = errText(parseErr(err));
+    }
+    if (manual) $('#checkUpd').disabled = false;
+    renderUpdate();
+    if (S.view === 'settings') renderSettings();
+  }
+  function renderUpdate(){
+    const u = S.update, box = $('#updBox');
+    box.hidden = !(u && u.available);
+    if (box.hidden) return;
+    if (!S.updating){
+      $('#updText').textContent = t('updAvailable', {v: u.latest});
+      $('#updBar').hidden = true;
+      $('#updBtn').hidden = false; $('#updBtn').disabled = false;
+    }
+  }
+  async function startUpdate(){
+    if (S.updating) return;
+    S.updating = true;
+    $('#updBtn').hidden = true; $('#updBar').hidden = false; $('#updBar').firstElementChild.style.width = '0%';
+    $('#updText').textContent = t('downloading', {p: 0});
+    try {
+      await api().DownloadUpdate();
+      $('#updText').textContent = t('restarting');
+      await win().RestartIntoUpdate();
+    } catch (err){
+      S.updating = false;
+      const e = parseErr(err);
+      toast(errText(e), true);
+      if (e.code === 'update_no_permission' && S.update && S.update.pageUrl) api().OpenURL(S.update.pageUrl);
+      renderUpdate();
+    }
+  }
+  $('#updBtn').onclick = () => {
+    const running = [...S.servers.values()].some(s => s.state === 'running' || s.state === 'starting');
+    if (running){ $('#updDlg').hidden = false; Motion.pop($('#updDlg .modal')); $('#updDlgNo').focus(); } else startUpdate();
+  };
+  $('#updDlgNo').onclick = () => { $('#updDlg').hidden = true; };
+  $('#updDlgYes').onclick = () => { $('#updDlg').hidden = true; startUpdate(); };
 
   /* ------------------------------------------------ server updates */
   function upsert(v){
@@ -711,18 +1050,29 @@
     const b = $('#closeStop'); b.disabled = true; b.lastElementChild.textContent = t('stopping');
     win().StopServersAndQuit();
   };
-  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#closeDlg').hidden) $('#closeDlg').hidden = true; });
+  addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    $('#closeDlg').hidden = true; $('#updDlg').hidden = true;
+  });
 
   /* ------------------------------------------------ start */
   async function init(){
     S.app = await api().State();
     const saved = S.app.settings.language;
     lang = saved === 'en' || saved === 'vi' ? saved : (navigator.language || '').toLowerCase().startsWith('vi') ? 'vi' : 'en';
+    Motion.setScale(S.app.settings.animation || '');
     applyTheme(S.app.settings.theme);
     applyStatic();
     for (const s of S.app.servers) S.servers.set(s.id, s);
     S.current = S.app.servers.length ? S.app.servers[0].id : null;
     home(); setTab('overview'); syncMax();
+    const pressed = b => b.getAttribute('aria-pressed') === 'true';
+    Motion.attach($('.tabs'), '[role=tab]', b => b.getAttribute('aria-selected') === 'true');
+    Motion.attach($('#srvList'), '.srv', b => b.getAttribute('aria-current') === 'true');
+    Motion.attach($('.lang-seg'), 'button', pressed);
+    Motion.attach($('#p-mods .chips'), '.chip', pressed);
+    $$('#v-settings .theme-seg').forEach(g => { g.classList.add('lens-accent'); Motion.attach(g, 'button', pressed); });
+    ['#pMode', '#pDiff'].forEach(sel => { $(sel).classList.add('lens-accent'); Motion.attach($(sel), 'button', b => b.getAttribute('aria-checked') === 'true'); });
 
     const on = window.runtime.EventsOn;
     on('setup', onSetup);
@@ -731,17 +1081,28 @@
       if (S.view === 'server' && v.id === S.current) renderServer();
     });
     on('server-log', ev => appendLog(ev.id, ev.lines || []));
+    on('update', ev => {
+      const p = ev.total ? Math.floor(ev.done / ev.total * 100) : 0;
+      $('#updBar').firstElementChild.style.width = p + '%';
+      $('#updText').textContent = t('downloading', {p});
+    });
+    if (!S.app.settings.skipUpdateCheck) checkUpdate(false);
     on('files-dropped', paths => {
       if (!paths || !paths.length) return;
       if (S.view === 'new'){ $('#packUrl').value = paths[0]; lookupPack(); return; }
       if (S.view === 'server' && S.tab === 'mods') addJars(paths);
+      if (S.view === 'server' && S.tab === 'props'){
+        const pic = paths.find(p => /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(p));
+        if (pic) changeIcon(id => api().SetServerIconFromFile(id, pic));
+        else toast(t('err_bad_picture'), true);
+      }
     });
     on('close-requested', why => {
       const setup = why && why.setup && !(why.servers > 0);
       $('#closeTitle').textContent = t(setup ? 'closeSetupTitle' : 'closeTitle');
       $('#closeText').textContent = t(setup ? 'closeSetupText' : 'closeText');
       const b = $('#closeStop'); b.disabled = false; b.lastElementChild.textContent = t(setup ? 'closeSetupStop' : 'closeStop');
-      $('#closeDlg').hidden = false; $('#closeKeep').focus();
+      $('#closeDlg').hidden = false; Motion.pop($('#closeDlg .modal')); $('#closeKeep').focus();
     });
   }
 

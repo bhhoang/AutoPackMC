@@ -193,7 +193,7 @@ func TestAddJarFiles(t *testing.T) {
 	if len(mods) != 1 || mods[0].State != "mine" || mods[0].Name != "Chunky" {
 		t.Fatalf("mods = %+v", mods)
 	}
-	if err := s.RemoveMod(rec.ID, "Chunky-1.3.146.jar"); err != nil {
+	if _, err := s.RemoveMod(rec.ID, "Chunky-1.3.146.jar"); err != nil {
 		t.Fatal(err)
 	}
 	if mods, _ := s.Mods(rec.ID); len(mods) != 0 {
@@ -206,7 +206,7 @@ func TestModFileNamesCannotLeaveModsFolder(t *testing.T) {
 	rec := addServer(t, s)
 	writeFile(t, filepath.Join(rec.Dir, "server.properties"), "x")
 	for _, name := range []string{`..\server.properties`, "../server.properties", "..", ""} {
-		if err := s.RemoveMod(rec.ID, name); err == nil {
+		if _, err := s.RemoveMod(rec.ID, name); err == nil {
 			t.Errorf("RemoveMod(%q) was allowed", name)
 		}
 		if err := s.SetModOff(rec.ID, name); err == nil {
@@ -363,7 +363,7 @@ func TestModChangesRefusedWhileRunning(t *testing.T) {
 
 	for name, err := range map[string]error{
 		"SetModOff": s.SetModOff(rec.ID, "create-0.5.jar"),
-		"RemoveMod": s.RemoveMod(rec.ID, "create-0.5.jar"),
+		"RemoveMod": func() error { _, err := s.RemoveMod(rec.ID, "create-0.5.jar"); return err }(),
 	} {
 		var ue *Error
 		if !errors.As(err, &ue) || ue.Code != "stop_first" {

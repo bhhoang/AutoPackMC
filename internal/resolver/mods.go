@@ -37,10 +37,34 @@ type Project struct {
 
 // ModFile is a downloadable file of a mod.
 type ModFile struct {
-	ID           int      `json:"id"`
-	FileName     string   `json:"fileName"`
-	GameVersions []string `json:"gameVersions"`
-	ReleaseType  int      `json:"releaseType"` // 1=Release, 2=Beta, 3=Alpha
+	ID           int          `json:"id"`
+	FileName     string       `json:"fileName"`
+	GameVersions []string     `json:"gameVersions"`
+	ReleaseType  int          `json:"releaseType"` // 1=Release, 2=Beta, 3=Alpha
+	Dependencies []Dependency `json:"dependencies"`
+}
+
+// Dependency is another mod a file relies on.
+type Dependency struct {
+	ModID        int `json:"modId"`
+	RelationType int `json:"relationType"` // see RequiredDependency
+}
+
+// RequiredDependency is CurseForge's relationType for a mod that must be
+// installed too (the others are embedded, optional, tool, incompatible and
+// include).
+const RequiredDependency = 3
+
+// RequiredMods returns the project IDs of the mods this file cannot run
+// without.
+func (f ModFile) RequiredMods() []int {
+	var ids []int
+	for _, d := range f.Dependencies {
+		if d.RelationType == RequiredDependency {
+			ids = append(ids, d.ModID)
+		}
+	}
+	return ids
 }
 
 // ClientOnly reports whether CurseForge tags the file Client without Server.
@@ -179,6 +203,29 @@ func (r *Resolver) search(classID int, query, mcVersion, loader string, limit in
 		out = append(out, proj)
 	}
 	return out, nil
+}
+
+// Mod looks up a mod or modpack by its project ID.
+func (r *Resolver) Mod(id int) (*Project, error) {
+	body, err := r.apiGet(fmt.Sprintf("%s/mods/%d", r.api(), id))
+	if err != nil {
+		return nil, fmt.Errorf("look up mod %d: %w", id, err)
+	}
+	var result struct {
+		Data cfProject `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parse mod response: %w", err)
+	}
+	p := result.Data.project()
+	return &p, nil
+}
+
+// WithBaseURL points the resolver at another CurseForge API address, for
+// tests outside this package.
+func (r *Resolver) WithBaseURL(base string) *Resolver {
+	r.apiBase = base
+	return r
 }
 
 // ModFromURL looks up the mod a CurseForge mod page URL points at.
