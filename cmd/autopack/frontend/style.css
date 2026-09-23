@@ -526,3 +526,11 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 /* Settings: animation length */
 .anim-seg{grid-template-columns:repeat(8,1fr)}
 .anim-seg button{padding:0 4px}
+
+/* Long lists: rows are tinted, not frosted. A backdrop blur per row costs a
+   separate blur layer each, which a pack with hundreds of mods cannot
+   afford; the page behind them is already frosted. Rows off screen skip
+   rendering until scrolled to. */
+.mods .mod.card,.mods .empty.card,.results .result{-webkit-backdrop-filter:none;backdrop-filter:none}
+.mods .mod.card{background:color-mix(in srgb,var(--solid) 66%,transparent);content-visibility:auto;contain-intrinsic-size:auto 66px}
+.mod-sk{height:66px;border-radius:18px}

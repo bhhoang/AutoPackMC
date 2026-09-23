@@ -114,7 +114,9 @@
     S.tab = x; S.tabShownFor = S.current;
     $$('[role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === x));
     ['overview','mods','props','console'].forEach(k => { $('#p-' + k).hidden = k !== x; });
-    if (changed) Motion.enter($('#p-' + x), '.card, .mods-top, .chips, .console > *, details.adv, .form-foot', {max: 12});
+    // The mod list animates itself once it has loaded, so the panel only
+    // animates its fixed parts.
+    if (changed) Motion.enter($('#p-' + x), x === 'mods' ? '.mods-top, .chips' : '.card, .console > *, details.adv, .form-foot', {max: 12});
     if (x === 'mods') loadMods();
     if (x === 'props') loadProps();
     if (x === 'console') loadLog();
@@ -132,7 +134,7 @@
         crashed: `<span class="bad">${esc(t('sideAttention'))}</span>`,
       }[s.state] || '';
       b.innerHTML = `${tileHTML(s.name, s.icon || s.logoUrl)}<div><div class="t">${esc(s.name)}</div><div class="s">${st}</div></div>`;
-      b.onclick = () => { S.current = s.id; S.mods = []; S.props = S.propsSaved = null; show('server'); setTab(S.tab); };
+      b.onclick = () => { S.current = s.id; S.modsFor = null; S.props = S.propsSaved = null; show('server'); setTab(S.tab); };
       list.appendChild(b);
     }
     $('#settingsBtn').setAttribute('aria-current', S.view === 'settings');
@@ -291,11 +293,22 @@
   }
 
   /* ------------------------------------------------ mods */
+  // A list already loaded for this server shows at once and refreshes
+  // quietly; the first load shows placeholder rows, never "no mods".
   async function loadMods(){
     const s = srv(); if (!s) return;
     $('#modUrlHelp').textContent = t('onlyCompatible', packVars(s));
-    try { S.mods = await api().Mods(s.id); } catch (err){ S.mods = []; toastErr(err); }
-    renderMods(true);
+    const first = S.modsFor !== s.id;
+    if (first){
+      S.mods = []; S.modsFor = null;
+      $('#modList').innerHTML = '<div class="sk mod-sk"></div>'.repeat(6);
+    } else renderMods();
+    const token = (S.modsToken = (S.modsToken || 0) + 1);
+    let mods;
+    try { mods = await api().Mods(s.id); } catch (err){ mods = []; toastErr(err); }
+    if (token !== S.modsToken || S.current !== s.id) return; // switched away meanwhile
+    S.mods = mods; S.modsFor = s.id;
+    renderMods(first);
   }
   function renderMods(animate){
     const q = $('#modSearch').value.trim().toLowerCase();
@@ -308,7 +321,7 @@
       return;
     }
     const why = {client: 'whyClient', list: 'whyList', you: 'whyYou'};
-    box.innerHTML = list.map((m, i) => {
+    const rows = list.map((m, i) => {
       // A mod added only because another added mod needs it goes away with
       // that mod, so it has no button of its own.
       const dep = m.state === 'mine' && m.reason === 'dep';
@@ -320,10 +333,23 @@
       return `<div class="card mod${m.state === 'off' ? ' removed' : ''}">${tileHTML(m.name)}
         <div><b>${esc(m.name)}</b><div class="f" title="${esc(m.fileName)}">${esc(m.fileName)}</div>${status}</div>
         ${action}</div>`;
-    }).join('');
+    });
+    // The first screenful now, the rest on the next frame, so opening a pack
+    // with hundreds of mods never holds up a frame.
+    S.modRows = list;
+    const token = (S.modRender = (S.modRender || 0) + 1);
+    box.innerHTML = rows.slice(0, 24).join('');
+    if (rows.length > 24) requestAnimationFrame(() => {
+      if (token === S.modRender) box.insertAdjacentHTML('beforeend', rows.slice(24).join(''));
+    });
     if (animate === true) Motion.enter(box, '.mod', {max: 16, stagger: 22});
-    $$('[data-mod]', box).forEach(b => b.onclick = async () => {
-      const m = list[+b.dataset.mod], id = S.current;
+  }
+  // One click handler for every row's button.
+  $('#modList').addEventListener('click', async e => {
+    const b = e.target.closest('[data-mod]'); if (!b || b.disabled) return;
+    const m = S.modRows[+b.dataset.mod], id = S.current;
+    if (!m) return;
+    {
       b.disabled = true;
       try {
         if (m.state === 'mine'){
@@ -335,8 +361,8 @@
         modsChanged();
       } catch (err){ toastErr(err); b.disabled = false; }
       loadMods();
-    });
-  }
+    }
+  });
   function modsChanged(){
     const s = srv();
     $('#restartNote').hidden = !(s && s.state === 'running');

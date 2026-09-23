@@ -147,9 +147,14 @@
       ? {x: Math.min(prev.x, r.x) + Math.abs(r.x - prev.x) * .18, y: r.y, w: Math.abs(r.x - prev.x) * .64 + (prev.w + r.w) / 2, h: r.h * .9}
       : {x: r.x, y: Math.min(prev.y, r.y) + Math.abs(r.y - prev.y) * .18, w: r.w * .96, h: Math.abs(r.y - prev.y) * .64 + (prev.h + r.h) / 2};
     const frame = q => ({transform: `translate(${q.x}px, ${q.y + (horizontal ? (r.h - q.h) / 2 : 0)}px)`, width: q.w + 'px', height: q.h + 'px'});
-    lens.animate([frame(prev), {...frame(mid), offset: .42}, frame(r)], {
+    // The refraction map fits only the resting shape, so the lens travels
+    // as plain frost and bends light again once it lands.
+    lens.style.setProperty('--lens-filter', 'blur(1px)');
+    if (L.anim) L.anim.cancel();
+    L.anim = lens.animate([frame(prev), {...frame(mid), offset: .42}, frame(r)], {
       duration: ms(520), easing: 'cubic-bezier(.25,1.25,.45,1)',
     });
+    L.anim.finished.then(() => { if (L.rect === r) lens.style.setProperty('--lens-filter', `url(#${id})`); }, () => {});
   }
 
   function refresh(animate = true){ lenses.forEach(L => place(L, animate)); }
@@ -196,10 +201,12 @@
     const max = opts.max ?? 14;
     items.slice(0, max).forEach((el, i) => {
       if (el.offsetParent === null) return;
+      // Only opacity and transform: the compositor moves these without
+      // repainting the frosted glass underneath.
       el.animate([
-        {opacity: 0, transform: `translateY(${opts.rise ?? 10}px) scale(${opts.from ?? .985})`, filter: 'blur(6px)'},
-        {opacity: 1, transform: 'none', filter: 'blur(0)'},
-      ], {duration: ms(opts.duration ?? 420), delay: ms(i * (opts.stagger ?? 34)), easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards'});
+        {opacity: 0, transform: `translateY(${opts.rise ?? 10}px) scale(${opts.from ?? .985})`},
+        {opacity: 1, transform: 'none'},
+      ], {duration: ms(opts.duration ?? 380), delay: ms(i * (opts.stagger ?? 30)), easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards'});
     });
   }
 
@@ -215,7 +222,7 @@
   // Swap text with a quick crossfade, for status changes.
   function swap(el){
     if (!on() || !el) return;
-    el.animate([{opacity: 0, transform: 'translateY(6px)', filter: 'blur(4px)'}, {opacity: 1, transform: 'none', filter: 'blur(0)'}],
+    el.animate([{opacity: 0, transform: 'translateY(6px)'}, {opacity: 1, transform: 'none'}],
       {duration: ms(360), easing: 'cubic-bezier(.16,1,.3,1)'});
   }
 
