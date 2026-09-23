@@ -566,3 +566,7 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 [data-effects="light"] .mods .mod.card{background:var(--solid)}
 [data-effects="light"] .lens{background:var(--glass-card)}
 [data-effects="light"] body::after{display:none}
+
+/* The subtitle beside the app's name says what it is. */
+.titlebar .sub{font-size:12.5px;font-weight:500;color:var(--text-3);white-space:nowrap}
+.titlebar .sub::before{content:"·";margin:0 7px 0 1px;color:var(--text-3)}

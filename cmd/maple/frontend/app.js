@@ -1,4 +1,4 @@
-// IDISMAM page logic. Go methods are reached through window.go.app.Service
+// Maple page logic. Go methods are reached through window.go.app.Service
 // (the app) and window.go.main.Window (the title bar); updates arrive as
 // runtime events: setup, server, server-log, files-dropped, close-requested.
 (() => {
@@ -1024,7 +1024,7 @@
     renderProps();
   });
 
-  /* ------------------------------------------------ IDISMAM updates */
+  /* ------------------------------------------------ Maple updates */
   async function checkUpdate(manual){
     if (manual){ $('#updStatus').textContent = t('checking'); $('#checkUpd').disabled = true; }
     try {

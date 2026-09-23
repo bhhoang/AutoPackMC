@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bhhoang/IDISMAM/pkg/logger"
-	"github.com/bhhoang/IDISMAM/pkg/utils"
+	"github.com/bhhoang/Maple/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/utils"
 )
 
 const (

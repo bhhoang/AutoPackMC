@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bhhoang/IDISMAM/pkg/logger"
-	"github.com/bhhoang/IDISMAM/pkg/utils"
+	"github.com/bhhoang/Maple/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/utils"
 )
 
 // ErrClientOnlyCrash is returned by Server.Wait when client-only mods crashed

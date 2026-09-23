@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bhhoang/IDISMAM/internal/parser"
+	"github.com/bhhoang/Maple/internal/parser"
 )
 
 const goodJar = "the real jar bytes"

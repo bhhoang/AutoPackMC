@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bhhoang/IDISMAM/internal/java"
-	"github.com/bhhoang/IDISMAM/internal/runtime"
-	"github.com/bhhoang/IDISMAM/pkg/logger"
+	"github.com/bhhoang/Maple/internal/java"
+	"github.com/bhhoang/Maple/internal/runtime"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 // Server states shown on the page.

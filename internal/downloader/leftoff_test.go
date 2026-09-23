@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bhhoang/IDISMAM/internal/parser"
+	"github.com/bhhoang/Maple/internal/parser"
 )
 
 // TestDownloadModsReportsProgressAndLeftOff downloads a pack with one server

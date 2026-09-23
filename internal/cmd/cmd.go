@@ -8,14 +8,14 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/bhhoang/IDISMAM/internal/cleaner"
-	"github.com/bhhoang/IDISMAM/internal/downloader"
-	"github.com/bhhoang/IDISMAM/internal/installer"
-	"github.com/bhhoang/IDISMAM/internal/java"
-	"github.com/bhhoang/IDISMAM/internal/parser"
-	"github.com/bhhoang/IDISMAM/internal/runtime"
-	"github.com/bhhoang/IDISMAM/internal/setup"
-	"github.com/bhhoang/IDISMAM/pkg/logger"
+	"github.com/bhhoang/Maple/internal/cleaner"
+	"github.com/bhhoang/Maple/internal/downloader"
+	"github.com/bhhoang/Maple/internal/installer"
+	"github.com/bhhoang/Maple/internal/java"
+	"github.com/bhhoang/Maple/internal/parser"
+	"github.com/bhhoang/Maple/internal/runtime"
+	"github.com/bhhoang/Maple/internal/setup"
+	"github.com/bhhoang/Maple/pkg/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -23,14 +23,14 @@ import (
 var cfgFile string
 
 // version is set at build time with
-// -ldflags "-X github.com/bhhoang/IDISMAM/internal/cmd.version=v1.2.3".
+// -ldflags "-X github.com/bhhoang/Maple/internal/cmd.version=v1.2.3".
 var version = "dev"
 
 // rootCmd is the base command for mcpackctl.
 var rootCmd = &cobra.Command{
 	Use:     "mcpackctl",
 	Version: version,
-	Short:   "IDISMAM — automated Minecraft modpack server setup",
+	Short:   "Maple — automated Minecraft modpack server setup",
 	Long: `mcpackctl downloads, configures, and runs Minecraft modpack servers.
 It supports CurseForge and raw modpack formats with Forge and Fabric loaders.`,
 }

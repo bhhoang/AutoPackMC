@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 )
 
-// DataDir returns the folder under configDir that holds IDISMAM's settings,
+// DataDir returns the folder under configDir that holds Maple's settings,
 // server list and log. The app used to be called AutoPack; the first time
-// IDISMAM starts, it moves the old AutoPack folder over. If the old folder
+// Maple starts, it moves the old AutoPack folder over. If the old folder
 // cannot be moved yet (a file in it is still in use), it is used as it is
 // and the move is tried again next time.
 func DataDir(configDir string) string {
-	dir := filepath.Join(configDir, "IDISMAM")
+	dir := filepath.Join(configDir, "Maple")
 	old := filepath.Join(configDir, "AutoPack")
 	if _, err := os.Stat(dir); err == nil {
 		return dir

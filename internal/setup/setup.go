@@ -1,6 +1,6 @@
 // Package setup turns a modpack (a CurseForge URL, a Google Drive link, a
 // ZIP/RAR archive or an extracted directory) into a ready-to-start Minecraft
-// server. It is shared by the mcpackctl CLI and the IDISMAM desktop app.
+// server. It is shared by the mcpackctl CLI and the Maple desktop app.
 package setup
 
 import (
@@ -9,16 +9,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bhhoang/IDISMAM/internal/cleaner"
-	"github.com/bhhoang/IDISMAM/internal/detector"
-	"github.com/bhhoang/IDISMAM/internal/downloader"
-	"github.com/bhhoang/IDISMAM/internal/installer"
-	"github.com/bhhoang/IDISMAM/internal/java"
-	"github.com/bhhoang/IDISMAM/internal/modstate"
-	"github.com/bhhoang/IDISMAM/internal/parser"
-	"github.com/bhhoang/IDISMAM/internal/resolver"
-	"github.com/bhhoang/IDISMAM/pkg/logger"
-	"github.com/bhhoang/IDISMAM/pkg/utils"
+	"github.com/bhhoang/Maple/internal/cleaner"
+	"github.com/bhhoang/Maple/internal/detector"
+	"github.com/bhhoang/Maple/internal/downloader"
+	"github.com/bhhoang/Maple/internal/installer"
+	"github.com/bhhoang/Maple/internal/java"
+	"github.com/bhhoang/Maple/internal/modstate"
+	"github.com/bhhoang/Maple/internal/parser"
+	"github.com/bhhoang/Maple/internal/resolver"
+	"github.com/bhhoang/Maple/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/utils"
 )
 
 // Stage is a step of a setup, reported through Options.OnStage.

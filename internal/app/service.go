@@ -1,4 +1,4 @@
-// Package app is the logic behind the IDISMAM desktop window: servers the
+// Package app is the logic behind the Maple desktop window: servers the
 // user has set up, setting up and updating packs, running servers, and
 // managing their mods. It has no dependency on the window toolkit; the
 // window reaches it through the exported methods of Service and receives
@@ -19,11 +19,11 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/bhhoang/IDISMAM/internal/detector"
-	"github.com/bhhoang/IDISMAM/internal/downloader"
-	"github.com/bhhoang/IDISMAM/internal/resolver"
-	"github.com/bhhoang/IDISMAM/internal/setup"
-	"github.com/bhhoang/IDISMAM/pkg/logger"
+	"github.com/bhhoang/Maple/internal/detector"
+	"github.com/bhhoang/Maple/internal/downloader"
+	"github.com/bhhoang/Maple/internal/resolver"
+	"github.com/bhhoang/Maple/internal/setup"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 // UI is what the service needs from the window it runs in.

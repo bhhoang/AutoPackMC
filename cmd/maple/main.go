@@ -1,9 +1,9 @@
-// Command idismam is the IDISMAM desktop app: a window for setting up and
+// Command maple is the Maple desktop app: a window for setting up and
 // running Minecraft modpack servers without the command line.
 //
 // Build it on Windows with:
 //
-//	go build -tags desktop,production -ldflags "-H windowsgui" -o IDISMAM.exe ./cmd/idismam
+//	go build -tags desktop,production -ldflags "-H windowsgui" -o Maple.exe ./cmd/maple
 package main
 
 import (
@@ -21,10 +21,10 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
-	"github.com/bhhoang/IDISMAM/internal/app"
-	"github.com/bhhoang/IDISMAM/internal/downloader"
-	"github.com/bhhoang/IDISMAM/pkg/logger"
-	"github.com/bhhoang/IDISMAM/pkg/utils"
+	"github.com/bhhoang/Maple/internal/app"
+	"github.com/bhhoang/Maple/internal/downloader"
+	"github.com/bhhoang/Maple/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/utils"
 )
 
 //go:embed all:frontend
@@ -55,7 +55,7 @@ func main() {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
-	logFile := openLog(filepath.Join(dataDir, "idismam.log"))
+	logFile := openLog(filepath.Join(dataDir, "maple.log"))
 	defer logFile.Close()
 	logger.SetOutput(logFile, "info")
 
@@ -67,7 +67,7 @@ func main() {
 		DefaultAPIKey:     publicAPIKey,
 		ExcludeListSource: downloader.DefaultExcludeListURL,
 		Version:           version,
-		UpdateRepo:        "bhhoang/IDISMAM",
+		UpdateRepo:        "bhhoang/Maple",
 	}, ui)
 	if err != nil {
 		logger.Get().Fatal().Err(err).Msg("cannot load saved servers")
@@ -79,7 +79,7 @@ func main() {
 		log.Fatal(err)
 	}
 	err = wails.Run(&options.App{
-		Title:            "IDISMAM",
+		Title:            "Maple · Modpack Server",
 		Width:            1180,
 		Height:           780,
 		MinWidth:         960,
@@ -93,7 +93,7 @@ func main() {
 		Bind:             []interface{}{svc, win},
 		DragAndDrop:      &options.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: true},
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId:               "idismam-8f4d2c1e-desktop",
+			UniqueId:               "maple-8f4d2c1e-desktop",
 			OnSecondInstanceLaunch: win.secondInstance,
 		},
 		Windows: &windows.Options{

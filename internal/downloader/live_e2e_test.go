@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/bhhoang/IDISMAM/internal/parser"
+	"github.com/bhhoang/Maple/internal/parser"
 )
 
 // TestLiveFailureReport talks to the real CurseForge API. Enabled with

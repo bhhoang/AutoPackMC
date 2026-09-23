@@ -10,8 +10,8 @@ import (
 
 	"github.com/mattn/go-isatty"
 
-	"github.com/bhhoang/IDISMAM/internal/downloader"
-	"github.com/bhhoang/IDISMAM/pkg/logger"
+	"github.com/bhhoang/Maple/internal/downloader"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 // failedModsPageName is the report written next to the generated server.

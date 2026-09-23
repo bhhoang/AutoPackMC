@@ -11,7 +11,7 @@ func TestDataDirMovesTheAutoPackFolder(t *testing.T) {
 	writeFile(t, filepath.Join(cfg, "AutoPack", "servers.json"), "[]")
 
 	dir := DataDir(cfg)
-	if dir != filepath.Join(cfg, "IDISMAM") {
+	if dir != filepath.Join(cfg, "Maple") {
 		t.Fatalf("data dir = %s", dir)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "servers.json")); err != nil {
@@ -22,12 +22,12 @@ func TestDataDirMovesTheAutoPackFolder(t *testing.T) {
 	}
 }
 
-func TestDataDirKeepsAnExistingIDISMAMFolder(t *testing.T) {
+func TestDataDirKeepsAnExistingMapleFolder(t *testing.T) {
 	cfg := t.TempDir()
 	writeFile(t, filepath.Join(cfg, "AutoPack", "old.txt"), "old")
-	writeFile(t, filepath.Join(cfg, "IDISMAM", "new.txt"), "new")
+	writeFile(t, filepath.Join(cfg, "Maple", "new.txt"), "new")
 
-	if dir := DataDir(cfg); dir != filepath.Join(cfg, "IDISMAM") {
+	if dir := DataDir(cfg); dir != filepath.Join(cfg, "Maple") {
 		t.Fatalf("data dir = %s", dir)
 	}
 	if _, err := os.Stat(filepath.Join(cfg, "AutoPack", "old.txt")); err != nil {
@@ -37,7 +37,7 @@ func TestDataDirKeepsAnExistingIDISMAMFolder(t *testing.T) {
 
 func TestDataDirOnFirstStart(t *testing.T) {
 	cfg := t.TempDir()
-	if dir := DataDir(cfg); dir != filepath.Join(cfg, "IDISMAM") {
+	if dir := DataDir(cfg); dir != filepath.Join(cfg, "Maple") {
 		t.Fatalf("data dir = %s", dir)
 	}
 }

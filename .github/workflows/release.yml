@@ -1,6 +1,6 @@
 # Tests every push and pull request. On a push to main it also picks the next
 # version from the commit messages, tags it, builds the mcpackctl CLI and the
-# IDISMAM desktop app, and publishes them as a GitHub release.
+# Maple desktop app, and publishes them as a GitHub release.
 #
 # Version bumps follow Conventional Commits since the last v* tag:
 #   feat: ...                    -> minor (v0.1.0 -> v0.2.0)
@@ -15,7 +15,7 @@
 # unsigned. See "Code signing" in the README.
 #   secret   SIGNPATH_API_TOKEN
 #   variable SIGNPATH_ORGANIZATION_ID
-#   variable SIGNPATH_PROJECT_SLUG           (default: IDISMAM)
+#   variable SIGNPATH_PROJECT_SLUG           (default: Maple)
 #   variable SIGNPATH_SIGNING_POLICY_SLUG    (default: release-signing)
 name: Build and release
 
@@ -51,7 +51,7 @@ jobs:
         run: go vet ./...
       - name: Vet the desktop app
         if: runner.os == 'Windows'
-        run: go vet -tags desktop,production ./cmd/idismam
+        run: go vet -tags desktop,production ./cmd/maple
       - name: Test with the race detector
         if: runner.os == 'Linux'
         run: go test -race ./...
@@ -171,7 +171,7 @@ jobs:
         run: |
           mkdir -p dist
           go build -trimpath \
-            -ldflags "-s -w -X github.com/bhhoang/IDISMAM/internal/cmd.version=$TAG" \
+            -ldflags "-s -w -X github.com/bhhoang/Maple/internal/cmd.version=$TAG" \
             -o "dist/mcpackctl-$TAG-$GOOS-$GOARCH${{ matrix.ext }}" ./cmd/mcpackctl
       - uses: actions/upload-artifact@v4
         with:
@@ -199,11 +199,11 @@ jobs:
           # Windows shows these in the file's properties and in its own
           # prompts; the manifest is the usual one for a desktop app.
           go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest gui \
-            --icon cmd/idismam/build/appicon.png \
-            --product-name IDISMAM --file-description IDISMAM \
+            --icon cmd/maple/build/appicon.png \
+            --product-name Maple --file-description "Maple Modpack Server" \
             --product-version "${TAG#v}" --file-version "${TAG#v}" \
             --copyright "Copyright (c) bhhoang. MIT License." \
-            --original-filename IDISMAM.exe --out cmd/idismam/rsrc
+            --original-filename Maple.exe --out cmd/maple/rsrc
       - name: Build
         shell: bash
         env:
@@ -212,7 +212,7 @@ jobs:
           mkdir -p dist
           go build -trimpath -tags desktop,production \
             -ldflags "-s -w -H windowsgui -X main.version=$TAG" \
-            -o "dist/IDISMAM-$TAG-windows-amd64.exe" ./cmd/idismam
+            -o "dist/Maple-$TAG-windows-amd64.exe" ./cmd/maple
       - uses: actions/upload-artifact@v4
         with:
           name: gui-windows-amd64
@@ -266,7 +266,7 @@ jobs:
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'IDISMAM' }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'Maple' }}
           signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
@@ -310,8 +310,8 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
         # The app was called AutoPack up to v0.2.0, and those copies update
         # to the file named AutoPack-<tag>-windows-amd64.exe. The same
-        # IDISMAM program under that name lets them update into IDISMAM.
-        run: cp "IDISMAM-$TAG-windows-amd64.exe" "AutoPack-$TAG-windows-amd64.exe"
+        # Maple program under that name lets them update into Maple.
+        run: cp "Maple-$TAG-windows-amd64.exe" "AutoPack-$TAG-windows-amd64.exe"
       - name: Checksums
         working-directory: dist
         run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
@@ -330,8 +330,8 @@ jobs:
           cat > notes.md <<EOF
           ## Downloads
 
-          - **IDISMAM-$TAG-windows-amd64.exe**: the desktop app for Windows 10 and 11. Download it and double-click it; nothing needs installing.
-          - **AutoPack-$TAG-windows-amd64.exe**: the same app under its old name, so AutoPack v0.2.0 and older can update to it. New downloads should use the IDISMAM file.
+          - **Maple-$TAG-windows-amd64.exe**: the desktop app for Windows 10 and 11. Download it and double-click it; nothing needs installing.
+          - **AutoPack-$TAG-windows-amd64.exe**: the same app under its old name, so AutoPack v0.2.0 and older can update to it. New downloads should use the Maple file.
           - **mcpackctl-$TAG-&lt;os&gt;-&lt;arch&gt;**: the command-line tool for Windows, Linux and macOS.
           - **SHA256SUMS.txt**: checksums to verify the downloads.
 

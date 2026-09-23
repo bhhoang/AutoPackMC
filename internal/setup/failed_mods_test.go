@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bhhoang/IDISMAM/internal/downloader"
+	"github.com/bhhoang/Maple/internal/downloader"
 )
 
 func sampleFailures() []downloader.FailedMod {

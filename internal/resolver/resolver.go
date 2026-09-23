@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bhhoang/IDISMAM/pkg/logger"
+	"github.com/bhhoang/Maple/pkg/logger"
 )
 
 const (

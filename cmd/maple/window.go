@@ -12,7 +12,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/bhhoang/IDISMAM/internal/app"
+	"github.com/bhhoang/Maple/internal/app"
 )
 
 // windowUI gives the service access to the window: events, dialogs and

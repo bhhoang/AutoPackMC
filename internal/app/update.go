@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// UpdateInfo describes the newest IDISMAM release.
+// UpdateInfo describes the newest Maple release.
 type UpdateInfo struct {
 	Current   string `json:"current"`
 	Latest    string `json:"latest"`
@@ -44,7 +44,7 @@ type release struct {
 	sumsURL string
 }
 
-const updateUserAgent = "IDISMAM-updater"
+const updateUserAgent = "Maple-updater"
 
 func (s *Service) updateAPI() string {
 	if s.cfg.UpdateAPI != "" {
@@ -60,7 +60,7 @@ func (s *Service) exePath() (string, error) {
 	return os.Executable()
 }
 
-// CheckForUpdate asks GitHub for the newest IDISMAM release.
+// CheckForUpdate asks GitHub for the newest Maple release.
 func (s *Service) CheckForUpdate() (*UpdateInfo, error) {
 	info := &UpdateInfo{Current: s.cfg.Version}
 	cur, ok := parseVersion(s.cfg.Version)
@@ -100,7 +100,7 @@ func (s *Service) CheckForUpdate() (*UpdateInfo, error) {
 	}
 
 	rel := &release{tag: body.TagName, page: body.HTMLURL}
-	want := fmt.Sprintf("IDISMAM-%s-%s-%s.exe", body.TagName, goruntime.GOOS, goruntime.GOARCH)
+	want := fmt.Sprintf("Maple-%s-%s-%s.exe", body.TagName, goruntime.GOOS, goruntime.GOARCH)
 	for _, a := range body.Assets {
 		switch a.Name {
 		case want:
