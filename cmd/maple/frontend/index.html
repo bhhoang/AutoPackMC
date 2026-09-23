@@ -282,6 +282,14 @@
               <button class="link" type="button" id="propsFile" data-i18n="editPropsFile"></button>
             </div>
           </form>
+
+          <div class="card rm-card">
+            <div>
+              <h3><span class="ms">delete</span><span data-i18n="rmTitle"></span></h3>
+              <p class="help" data-i18n="rmHelp"></p>
+            </div>
+            <button class="btn danger" type="button" id="rmBtn"><span class="ms">delete</span><span data-i18n="rmBtn"></span></button>
+          </div>
         </div>
 
         <div role="tabpanel" id="p-console" aria-labelledby="t-console" hidden>
@@ -534,6 +542,21 @@
     <div class="row">
       <button class="btn" type="button" id="updDlgNo" data-i18n="notNow"></button>
       <button class="btn primary" type="button" id="updDlgYes"><span class="ms">update</span><span data-i18n="updateRestart"></span></button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-back" id="rmDlg" hidden>
+  <div class="modal glass" role="alertdialog" aria-modal="true" aria-labelledby="rmDlgTitle" aria-describedby="rmDlgText">
+    <h2 id="rmDlgTitle"></h2>
+    <p class="lead" id="rmDlgText" data-i18n="rmDlgText"></p>
+    <label class="check" for="rmFolder">
+      <input type="checkbox" id="rmFolder">
+      <span><b data-i18n="rmFolder"></b><span class="help" id="rmFolderHelp"></span></span>
+    </label>
+    <div class="row">
+      <button class="btn" type="button" id="rmNo" data-i18n="cancel"></button>
+      <button class="btn danger" type="button" id="rmYes"><span class="ms">delete</span><span data-i18n="rmYes"></span></button>
     </div>
   </div>
 </div>

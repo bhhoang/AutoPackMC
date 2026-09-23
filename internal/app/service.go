@@ -62,6 +62,10 @@ type Service struct {
 	setupMu     sync.Mutex
 	setupCancel context.CancelFunc // non-nil while a setup runs
 	setupDone   chan struct{}      // closed when the running setup has finished
+	setupDir    string             // the folder the running setup works in
+
+	// trash moves a folder to the Recycle Bin; tests replace it.
+	trash func(dir string) error
 
 	update updater
 
@@ -70,6 +74,7 @@ type Service struct {
 
 	serversMu sync.Mutex
 	running   map[string]*running // by server ID, while running
+	removing  map[string]bool     // by server ID, while RemoveServer runs
 	logs      map[string]*logRing // by server ID, kept after the server stops
 	states    map[string]*stateView
 }
@@ -85,12 +90,14 @@ func New(cfg Config, ui UI) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{
-		cfg:     cfg,
-		ui:      ui,
-		store:   st,
-		running: map[string]*running{},
-		logs:    map[string]*logRing{},
-		states:  map[string]*stateView{},
+		cfg:      cfg,
+		ui:       ui,
+		store:    st,
+		running:  map[string]*running{},
+		removing: map[string]bool{},
+		trash:    moveToRecycleBin,
+		logs:     map[string]*logRing{},
+		states:   map[string]*stateView{},
 	}
 	s.downloadMod = func(projectID, fileID int, dir string) error {
 		return s.downloaderFor().DownloadOne(projectID, fileID, dir)
@@ -331,13 +338,13 @@ func (s *Service) StartSetup(req SetupRequest) error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	s.setupCancel, s.setupDone = cancel, done
+	s.setupCancel, s.setupDone, s.setupDir = cancel, done, req.Dir
 	s.setupMu.Unlock()
 
 	go func() {
 		defer func() {
 			s.setupMu.Lock()
-			s.setupCancel, s.setupDone = nil, nil
+			s.setupCancel, s.setupDone, s.setupDir = nil, nil, ""
 			s.setupMu.Unlock()
 			cancel()
 			close(done)

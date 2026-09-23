@@ -1119,8 +1119,41 @@
   };
   addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    $('#closeDlg').hidden = true; $('#updDlg').hidden = true;
+    $('#closeDlg').hidden = true; $('#updDlg').hidden = true; $('#rmDlg').hidden = true;
   });
+
+  /* ------------------------------------------------ remove a server */
+  // Asks first; the folder stays unless the user ticks the box, and then it
+  // goes to the Recycle Bin, never straight to deletion.
+  $('#rmBtn').onclick = () => {
+    const s = srv(); if (!s) return;
+    if (s.state === 'running' || s.state === 'starting' || S.stopping.has(s.id)) return toast(t('rmStopFirst'), true);
+    $('#rmDlgTitle').textContent = t('rmDlgTitle', {name: s.name});
+    $('#rmFolderHelp').textContent = t('rmFolderHelp', {dir: s.dir});
+    $('#rmFolder').checked = false;
+    $('#rmDlg').hidden = false; Motion.pop($('#rmDlg .modal')); $('#rmNo').focus();
+  };
+  $('#rmNo').onclick = () => { $('#rmDlg').hidden = true; };
+  $('#rmYes').onclick = async () => {
+    const s = srv(); if (!s) return;
+    const folder = $('#rmFolder').checked, btn = $('#rmYes');
+    btn.disabled = true;
+    try {
+      await api().RemoveServer(s.id, folder);
+      $('#rmDlg').hidden = true;
+      S.servers.delete(s.id);
+      if (S.current === s.id) S.current = null;
+      // Forget what was loaded for the removed server, as switching does.
+      S.modsFor = null; S.props = S.propsSaved = null;
+      home();
+      if (S.view === 'server') setTab('overview');
+      toast(t(folder ? 'toastServerTrashed' : 'toastServerRemoved', {name: s.name}));
+    } catch (err){
+      toastErr(err);
+    } finally {
+      btn.disabled = false;
+    }
+  };
 
   /* ------------------------------------------------ start */
   async function init(){

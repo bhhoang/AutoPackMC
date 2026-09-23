@@ -157,6 +157,10 @@ func (s *Service) StartServer(id string) error {
 		s.serversMu.Unlock()
 		return nil
 	}
+	if s.removing[id] {
+		s.serversMu.Unlock()
+		return &Error{Code: "no_server"}
+	}
 	// Hold the slot while java launches, so a second click cannot start a
 	// second server in the same folder.
 	slot := &running{launched: make(chan struct{})}
