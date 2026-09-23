@@ -80,7 +80,9 @@
       img.src = logo;
     }
   }
-  const tileHTML = (name, logo) => `<div class="pack-tile" style="background:hsl(${hue(name)} 35% 42%)">${logo ? `<img alt="" referrerpolicy="no-referrer" src="${esc(logo)}" onerror="this.remove()">` : ''}${logo ? '' : esc((String(name || '?').trim()[0] || '?').toUpperCase())}</div>`;
+  // The letter is always there, under the picture, so a picture that fails to
+  // load still leaves a readable tile.
+  const tileHTML = (name, logo) => `<div class="pack-tile" style="background:hsl(${hue(name)} 35% 42%)">${esc((String(name || '?').trim()[0] || '?').toUpperCase())}${logo ? `<img class="over" alt="" referrerpolicy="no-referrer" src="${esc(logo)}" onerror="this.remove()">` : ''}</div>`;
 
   function face(name){ // an 8x8 pixel face per player name
     const c = document.createElement('canvas'); c.width = c.height = 8; const x = c.getContext('2d');
@@ -757,6 +759,7 @@
     box.innerHTML = s.icon ? `<img alt="" src="${s.icon}">` : '<span class="ms">image</span>';
     $('#pvName').textContent = s.name;
     $('#pvCount').textContent = `${s.players.length}/${S.props.maxPlayers}`;
+    $('#pvCountWrap').title = t('playerCountTip', {n: s.players.length, max: S.props.maxPlayers});
     $('#pvMotd').textContent = S.props.motd;
     $('#iconRemove').hidden = !s.icon;
     $('#iconLogo').hidden = !s.logoUrl;
@@ -772,7 +775,7 @@
       if (s.state === 'running' || s.state === 'starting'){ $('#propsNote').hidden = false; }
     } catch (err){ toastErr(err); }
   }
-  $('#iconPick').onclick = () => changeIcon(id => api().PickServerIcon(id));
+  $('#iconPick').onclick = $('#pIcon').onclick = () => changeIcon(id => api().PickServerIcon(id));
   $('#iconLogo').onclick = () => changeIcon(id => api().UseModpackLogoAsIcon(id));
   $('#iconRemove').onclick = () => changeIcon(id => api().RemoveServerIcon(id).then(() => ''), true);
 
