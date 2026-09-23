@@ -580,3 +580,17 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 .rm-card .btn{flex:none}
 #rmDlg .check span{display:flex;flex-direction:column;gap:4px}
 #rmDlg .check .help{overflow-wrap:anywhere}
+
+/* Right-click menu for a server in the list. */
+.ctx{position:fixed;z-index:30;min-width:232px;max-width:300px;padding:6px;border-radius:14px;display:flex;flex-direction:column;gap:1px;
+  box-shadow:inset 0 1px 0 var(--glass-hi),0 18px 44px var(--shadow)}
+.ctx[hidden]{display:none}
+.ctx [role=menuitem]{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:9px;background:transparent;
+  color:var(--text);font:inherit;font-size:13.5px;font-weight:600;text-align:left;cursor:pointer}
+.ctx [role=menuitem] .ms{font-size:19px;color:var(--text-2)}
+.ctx [role=menuitem]:hover:not(:disabled),.ctx [role=menuitem]:focus-visible{background:var(--glass-soft);outline:none}
+.ctx [role=menuitem]:focus-visible{box-shadow:inset 0 0 0 2px var(--focus)}
+.ctx [role=menuitem]:disabled{opacity:.45;cursor:default}
+.ctx .danger,.ctx .danger .ms{color:var(--danger)}
+.ctx .sep{height:1px;margin:4px 8px;background:var(--glass-border)}
+#renDlg .field{display:flex;flex-direction:column;gap:6px}

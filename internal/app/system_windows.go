@@ -50,7 +50,9 @@ type shFileOpStruct struct {
 }
 
 const (
+	foMove             = 0x1
 	foDelete           = 0x3
+	fofNoConfirmMkDir  = 0x200
 	fofNoConfirmation  = 0x10
 	fofAllowUndo       = 0x40
 	fofNoErrorUI       = 0x400
@@ -81,6 +83,34 @@ func moveToRecycleBin(dir string) error {
 	}
 	if _, err := os.Stat(dir); err == nil {
 		return &Error{Code: "trash_failed", Detail: "the folder is still there"}
+	}
+	return nil
+}
+
+// moveAcrossDrives moves the folder from to the path to with File
+// Explorer's own move, which copies between drives and shows its progress.
+func moveAcrossDrives(from, to string) error {
+	src, err := windows.UTF16FromString(from)
+	if err != nil {
+		return err
+	}
+	dst, err := windows.UTF16FromString(to)
+	if err != nil {
+		return err
+	}
+	src, dst = append(src, 0), append(dst, 0)
+	op := shFileOpStruct{
+		wFunc:  foMove,
+		pFrom:  &src[0],
+		pTo:    &dst[0],
+		fFlags: fofAllowUndo | fofNoConfirmMkDir | fofNoErrorUI,
+	}
+	r, _, _ := procSHFileOperationW.Call(uintptr(unsafe.Pointer(&op)))
+	if op.fAnyOperationsAborted != 0 {
+		return &Error{Code: "move_cancelled"}
+	}
+	if r != 0 {
+		return &Error{Code: "move_failed", Detail: fmt.Sprintf("SHFileOperation error 0x%X", r)}
 	}
 	return nil
 }

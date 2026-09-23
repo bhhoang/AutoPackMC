@@ -34,6 +34,7 @@ type Settings struct {
 type ServerRecord struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
+	CustomName    bool      `json:"customName"` // the user renamed it; pack updates keep the name
 	Dir           string    `json:"dir"`
 	Source        string    `json:"source"` // what it was set up from: a link or a file
 	PackVersion   string    `json:"packVersion"`

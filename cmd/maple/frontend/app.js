@@ -122,6 +122,11 @@
     if (x === 'console') loadLog();
   }
 
+  function openServer(id, tab = S.tab){
+    if (S.current !== id){ S.current = id; S.modsFor = null; S.props = S.propsSaved = null; }
+    show('server'); setTab(tab);
+  }
+
   function renderSidebar(){
     const list = $('#srvList'); list.querySelectorAll('.srv').forEach(n => n.remove());
     for (const s of S.servers.values()){
@@ -134,7 +139,14 @@
         crashed: `<span class="bad">${esc(t('sideAttention'))}</span>`,
       }[s.state] || '';
       b.innerHTML = `${tileHTML(s.name, s.icon || s.logoUrl)}<div><div class="t">${esc(s.name)}</div><div class="s">${st}</div></div>`;
-      b.onclick = () => { S.current = s.id; S.modsFor = null; S.props = S.propsSaved = null; show('server'); setTab(S.tab); };
+      b.onclick = () => openServer(s.id);
+      b.oncontextmenu = e => { e.preventDefault(); openMenu(s.id, e.clientX, e.clientY, b); };
+      b.onkeydown = e => {
+        if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
+        e.preventDefault();
+        const r = b.getBoundingClientRect();
+        openMenu(s.id, r.left + 24, r.bottom - 6, b);
+      };
       list.appendChild(b);
     }
     $('#settingsBtn').setAttribute('aria-current', S.view === 'settings');
@@ -277,8 +289,8 @@
   });
 
   /* ------------------------------------------------ server actions */
-  async function act(a){
-    const s = srv(); if (!s) return;
+  async function act(a, id = S.current){
+    const s = S.servers.get(id); if (!s) return;
     try {
       if (a === 'start'){ $('#restartNote').hidden = true; await api().StartServer(s.id); }
       if (a === 'stop'){ S.stopping.add(s.id); renderServer(); await api().StopServer(s.id); }
@@ -1119,23 +1131,25 @@
   };
   addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    $('#closeDlg').hidden = true; $('#updDlg').hidden = true; $('#rmDlg').hidden = true;
+    $('#closeDlg').hidden = true; $('#updDlg').hidden = true; $('#rmDlg').hidden = true; $('#renDlg').hidden = true;
   });
 
   /* ------------------------------------------------ remove a server */
   // Asks first; the folder stays unless the user ticks the box, and then it
   // goes to the Recycle Bin, never straight to deletion.
-  $('#rmBtn').onclick = () => {
-    const s = srv(); if (!s) return;
+  $('#rmBtn').onclick = () => openRemove(S.current);
+  function openRemove(id){
+    const s = S.servers.get(id); if (!s) return;
+    S.rmId = id;
     if (s.state === 'running' || s.state === 'starting' || S.stopping.has(s.id)) return toast(t('rmStopFirst'), true);
     $('#rmDlgTitle').textContent = t('rmDlgTitle', {name: s.name});
     $('#rmFolderHelp').textContent = t('rmFolderHelp', {dir: s.dir});
     $('#rmFolder').checked = false;
     $('#rmDlg').hidden = false; Motion.pop($('#rmDlg .modal')); $('#rmNo').focus();
-  };
+  }
   $('#rmNo').onclick = () => { $('#rmDlg').hidden = true; };
   $('#rmYes').onclick = async () => {
-    const s = srv(); if (!s) return;
+    const s = S.servers.get(S.rmId); if (!s) return;
     const folder = $('#rmFolder').checked, btn = $('#rmYes');
     btn.disabled = true;
     try {
@@ -1154,6 +1168,135 @@
       btn.disabled = false;
     }
   };
+
+  /* ------------------------------------------------ server menu */
+  // Right-click a server in the list (or press the menu key) for its
+  // actions. Items that need a stopped server are greyed out while it runs.
+  const menu = $('#ctxMenu');
+  let menuFor = null, menuReturn = null;
+
+  function menuItems(s){
+    const busy = s.state === 'running' || s.state === 'starting' || S.stopping.has(s.id);
+    const hint = busy ? t('stopFirstHint') : '';
+    return [
+      busy ? {icon: 'stop', label: t('menuStop'), run: () => act('stop', s.id), off: S.stopping.has(s.id)}
+           : {icon: 'play_arrow', label: t('startServer'), run: () => act('start', s.id)},
+      {icon: 'folder_open', label: t('openFolder'), run: () => api().OpenServerFolder(s.id)},
+      {icon: 'tune', label: t('menuSettings'), run: () => openServer(s.id, 'props')},
+      null,
+      {icon: 'edit', label: t('menuRename'), run: () => openRename(s.id)},
+      {icon: 'drive_file_move', label: t('menuMove'), run: () => moveServer(s.id), off: busy, hint},
+      null,
+      {icon: 'delete', label: t('menuRemove'), run: () => openRemove(s.id), off: busy, hint, danger: true},
+    ];
+  }
+
+  function openMenu(id, x, y, from){
+    const s = S.servers.get(id); if (!s) return;
+    menuFor = id; menuReturn = from;
+    menu.setAttribute('aria-label', t('menuLabel', {name: s.name}));
+    menu.innerHTML = '';
+    const items = menuItems(s);
+    for (const it of items){
+      if (!it){ const hr = document.createElement('div'); hr.className = 'sep'; hr.setAttribute('role', 'separator'); menu.appendChild(hr); continue; }
+      const b = document.createElement('button');
+      b.type = 'button'; b.setAttribute('role', 'menuitem'); b.tabIndex = -1;
+      if (it.danger) b.classList.add('danger');
+      if (it.off){ b.disabled = true; b.setAttribute('aria-disabled', 'true'); }
+      if (it.off && it.hint) b.title = it.hint;
+      b.innerHTML = `<span class="ms">${it.icon}</span><span>${esc(it.label)}</span>`;
+      b.onclick = () => { closeMenu(false); it.run(); };
+      menu.appendChild(b);
+    }
+    menu.hidden = false;
+    // Keep it on screen: open up or left when there is no room.
+    const w = menu.offsetWidth, h = menu.offsetHeight, pad = 8;
+    const left = Math.min(x, innerWidth - w - pad), top = y + h + pad > innerHeight ? Math.max(pad, y - h) : y;
+    menu.style.left = Math.max(pad, left) + 'px';
+    menu.style.top = top + 'px';
+    menu.style.transformOrigin = `${x - left}px ${y >= top ? 0 : h}px`;
+    if (Motion.scale()) menu.animate([{opacity: 0, transform: 'scale(.94)'}, {opacity: 1, transform: 'none'}],
+      {duration: Motion.ms(170), easing: 'cubic-bezier(.2,1.2,.4,1)'});
+    const first = menu.querySelector('[role=menuitem]:not(:disabled)');
+    if (first) first.focus();
+  }
+
+  function closeMenu(restoreFocus = true){
+    if (menu.hidden) return;
+    menu.hidden = true; menuFor = null;
+    if (restoreFocus && menuReturn && document.contains(menuReturn)) menuReturn.focus();
+    menuReturn = null;
+  }
+
+  menu.addEventListener('keydown', e => {
+    const items = [...menu.querySelectorAll('[role=menuitem]:not(:disabled)')];
+    const i = items.indexOf(document.activeElement);
+    const go = n => { e.preventDefault(); items[(n + items.length) % items.length].focus(); };
+    if (e.key === 'ArrowDown') go(i + 1);
+    else if (e.key === 'ArrowUp') go(i - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(items.length - 1);
+    else if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); closeMenu(); }
+    else if (e.key === 'Tab'){ e.preventDefault(); closeMenu(); }
+  });
+  document.addEventListener('pointerdown', e => { if (!menu.hidden && !menu.contains(e.target)) closeMenu(false); }, true);
+  document.addEventListener('contextmenu', e => { if (!menu.hidden && !e.target.closest('.srv')) closeMenu(false); });
+  addEventListener('blur', () => closeMenu(false));
+  addEventListener('resize', () => closeMenu(false));
+  $('#srvList').addEventListener('scroll', () => closeMenu(false), {passive: true});
+
+  /* rename */
+  function openRename(id){
+    const s = S.servers.get(id); if (!s) return;
+    S.renId = id;
+    $('#renName').value = s.name;
+    $('#renDlg').hidden = false; Motion.pop($('#renDlg .modal'));
+    $('#renName').focus(); $('#renName').select();
+  }
+  $('#renNo').onclick = () => { $('#renDlg').hidden = true; };
+  $('#renForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id = S.renId, btn = $('#renYes');
+    btn.disabled = true;
+    try {
+      const v = await api().RenameServer(id, $('#renName').value);
+      $('#renDlg').hidden = true;
+      refreshServer(v);
+      toast(t('toastRenamed', {name: v.name}));
+    } catch (err){
+      toastErr(err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  /* move */
+  async function moveServer(id){
+    const s = S.servers.get(id); if (!s || S.moving) return;
+    let dest;
+    try { dest = await api().PickFolder(s.dir.replace(/[\\/][^\\/]+$/, '')); } catch (err){ return toastErr(err); }
+    if (!dest) return;
+    S.moving = true;
+    toast(t('moving', {name: s.name}), false, 60000);
+    try {
+      const v = await api().MoveServer(id, dest);
+      refreshServer(v);
+      toast(t('toastMoved', {name: v.name, dir: v.dir}), false, 6000);
+    } catch (err){
+      toastErr(err);
+    } finally {
+      S.moving = false;
+    }
+  }
+
+  // Shows a server's new details wherever they appear.
+  function refreshServer(v){
+    const prev = S.servers.get(v.id);
+    // The list's live state (running, players) is newer than this copy.
+    S.servers.set(v.id, prev ? {...v, state: prev.state, players: prev.players} : v);
+    renderSidebar();
+    if (S.view === 'server' && S.current === v.id){ renderServer(); if (S.props) renderIcon(); }
+  }
 
   /* ------------------------------------------------ start */
   async function init(){

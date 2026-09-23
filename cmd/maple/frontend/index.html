@@ -561,6 +561,23 @@
   </div>
 </div>
 
+<div class="modal-back" id="renDlg" hidden>
+  <form class="modal glass" role="dialog" aria-modal="true" aria-labelledby="renTitle" id="renForm">
+    <h2 id="renTitle" data-i18n="renTitle"></h2>
+    <div class="field">
+      <label for="renName" data-i18n="renLabel"></label>
+      <input class="input" id="renName" maxlength="64" autocomplete="off" aria-describedby="renHelp">
+      <span class="help" id="renHelp" data-i18n="renHelp"></span>
+    </div>
+    <div class="row">
+      <button class="btn" type="button" id="renNo" data-i18n="cancel"></button>
+      <button class="btn primary" type="submit" id="renYes"><span class="ms">check</span><span data-i18n="renSave"></span></button>
+    </div>
+  </form>
+</div>
+
+<div class="ctx glass" id="ctxMenu" role="menu" hidden></div>
+
 <div class="toast glass" id="toast" role="status"><span class="ms fill" id="toastIcon">check_circle</span><span id="toastMsg"></span></div>
 
 <script src="i18n.js"></script>

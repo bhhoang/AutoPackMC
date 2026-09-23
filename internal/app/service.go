@@ -64,8 +64,10 @@ type Service struct {
 	setupDone   chan struct{}      // closed when the running setup has finished
 	setupDir    string             // the folder the running setup works in
 
-	// trash moves a folder to the Recycle Bin; tests replace it.
+	// trash moves a folder to the Recycle Bin, and move moves a folder;
+	// tests replace them.
 	trash func(dir string) error
+	move  func(from, to string) error
 
 	update updater
 
@@ -96,6 +98,7 @@ func New(cfg Config, ui UI) (*Service, error) {
 		running:  map[string]*running{},
 		removing: map[string]bool{},
 		trash:    moveToRecycleBin,
+		move:     moveFolder,
 		logs:     map[string]*logRing{},
 		states:   map[string]*stateView{},
 	}
@@ -450,9 +453,11 @@ func (s *Service) runSetup(ctx context.Context, req SetupRequest) {
 		}
 	}
 	rec, err := s.store.UpdateServer(id, func(r *ServerRecord) {
-		r.Name = res.Name
-		if r.Name == "" {
-			r.Name = filepath.Base(req.Dir)
+		if !r.CustomName {
+			r.Name = res.Name
+			if r.Name == "" {
+				r.Name = filepath.Base(req.Dir)
+			}
 		}
 		r.Dir = req.Dir
 		r.Source = opts.Input
