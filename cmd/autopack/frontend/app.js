@@ -1014,7 +1014,7 @@
       if (S.view === 'new'){ $('#packUrl').value = paths[0]; lookupPack(); return; }
       if (S.view === 'server' && S.tab === 'mods') addJars(paths);
       if (S.view === 'server' && S.tab === 'props'){
-        const pic = paths.find(p => /\.(png|jpe?g|gif)$/i.test(p));
+        const pic = paths.find(p => /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(p));
         if (pic) changeIcon(id => api().SetServerIconFromFile(id, pic));
         else toast(t('err_bad_picture'), true);
       }

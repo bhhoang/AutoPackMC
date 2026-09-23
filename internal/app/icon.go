@@ -14,7 +14,15 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	_ "golang.org/x/image/bmp"  // decode BMP pictures
+	_ "golang.org/x/image/tiff" // decode TIFF pictures
+	_ "golang.org/x/image/webp" // decode WebP pictures
 )
+
+// pictureFilter lists the picture files AutoPack can read. Each is converted
+// to PNG, the only format Minecraft reads for server-icon.png.
+const pictureFilter = "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.tif;*.tiff"
 
 // iconSize is the size Minecraft needs for server-icon.png.
 const iconSize = 64
@@ -44,7 +52,7 @@ func iconDataURL(dir string) string {
 // PickServerIcon asks for a picture and makes it the server's picture. It
 // returns the new picture as a data: URL, or "" if the user cancelled.
 func (s *Service) PickServerIcon(id string) (string, error) {
-	files, err := s.ui.PickFiles("", "*.png;*.jpg;*.jpeg;*.gif", false)
+	files, err := s.ui.PickFiles("", pictureFilter, false)
 	if err != nil || len(files) == 0 {
 		return "", err
 	}
@@ -108,7 +116,7 @@ func (s *Service) setServerIcon(id string, r io.Reader) (string, error) {
 	}
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		// WebP and other formats land here.
+		// HEIC, AVIF, SVG and other formats land here.
 		return "", &Error{Code: "bad_picture", Detail: err.Error()}
 	}
 	var out bytes.Buffer
