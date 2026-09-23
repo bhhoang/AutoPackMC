@@ -135,7 +135,7 @@
   function renderServer(){
     const s = srv(); if (!s) return home();
     tile($('#hTile'), s.name, s.logoUrl);
-    $('#hName').textContent = s.name;
+    $('#hName').textContent = s.name; $('#hName').title = s.name;
     $('#hMeta').textContent = t('mcWith', packVars(s));
     const card = $('#statusCard'), pill = $('#sPill'), acts = $('#sActions'), extra = $('#sExtra');
     const P = (cls, icon, key) => { pill.className = 'pill ' + cls; pill.innerHTML = `<span class="ms fill ${cls === 'warn' ? 'pulse' : ''}">${icon}</span><span>${esc(t(key))}</span>`; };
@@ -273,6 +273,7 @@
       }
       if (a === 'fix'){ await api().FixCrash(s.id); }
       if (a === 'update'){ openForm(s.id); }
+      if (a === 'folder'){ api().OpenServerFolder(s.id); }
     } catch (err){ S.stopping.delete(s.id); renderServer(); toastErr(err); }
   }
 
