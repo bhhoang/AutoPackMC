@@ -21,7 +21,8 @@
 
   // setting: "" follows Windows, otherwise a number such as "0", "1" or "4".
   function setScale(setting){
-    const n = setting === '' || setting == null ? (osReduced() ? 0 : 1) : parseFloat(setting);
+    // The light look keeps automatic animations a little shorter.
+    const n = setting === '' || setting == null ? (osReduced() ? 0 : root.dataset.effects === 'light' ? .7 : 1) : parseFloat(setting);
     scale = Number.isFinite(n) && n >= 0 ? n : 1;
     root.style.setProperty('--anim', String(scale));
     root.dataset.motion = scale === 0 ? 'off' : 'on';
@@ -138,11 +139,13 @@
     lens.style.height = r.h + 'px';
     lens.style.borderRadius = radius + 'px';
     lens.style.transform = `translate(${r.x}px, ${r.y}px)`;
-    const id = lensFilter(r.w, r.h, radius);
+    // The light look has no refraction, so it needs no map.
+    const id = root.dataset.effects === 'light' ? null : lensFilter(r.w, r.h, radius);
+    const rest = id ? `url(#${id})` : 'blur(0)';
 
     if (!animate || !prev || same || !on()){
       if (L.anim){ L.anim.cancel(); L.anim = null; }
-      lens.style.setProperty('--lens-filter', `url(#${id})`);
+      lens.style.setProperty('--lens-filter', rest);
       return;
     }
     // The lens keeps its final size and only moves and scales, which the
@@ -173,7 +176,7 @@
     anim.finished.then(() => {
       if (L.anim !== anim) return;
       L.anim = null;
-      lens.style.setProperty('--lens-filter', `url(#${id})`);
+      lens.style.setProperty('--lens-filter', rest);
     }, () => {});
   }
 

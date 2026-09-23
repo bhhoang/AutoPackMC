@@ -552,3 +552,17 @@ body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;opa
 
 .switch input:active + i::after{width:27px}
 .switch input:checked:active + i::after{transform:translateX(12px)}
+
+/* Settings: glass effects */
+.fx-row{display:flex;align-items:center;gap:14px;margin-top:16px}
+.fx-row .theme-seg{flex:1;margin-top:0}
+#fxHelp{margin-top:8px}
+
+/* The light look, for PCs that draw the frosted glass slowly: solid
+   panels, no blur or refraction, no grain. */
+[data-effects="light"] *,[data-effects="light"] *::before,[data-effects="light"] *::after{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+[data-effects="light"] .glass,[data-effects="light"] .titlebar,[data-effects="light"] .side,[data-effects="light"] .card,
+[data-effects="light"] details.adv,[data-effects="light"] .tabs,[data-effects="light"] .chip,[data-effects="light"] .modal{background:var(--solid)}
+[data-effects="light"] .mods .mod.card{background:var(--solid)}
+[data-effects="light"] .lens{background:var(--glass-card)}
+[data-effects="light"] body::after{display:none}

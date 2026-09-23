@@ -130,6 +130,9 @@ func (s *Service) SaveSettings(v Settings) error {
 	if !validAnimation[v.Animation] {
 		v.Animation = ""
 	}
+	if v.Effects != "full" && v.Effects != "light" {
+		v.Effects = ""
+	}
 	return s.store.SaveSettings(v)
 }
 

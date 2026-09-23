@@ -20,6 +20,12 @@ type Settings struct {
 	// Animation multiplies how long animations take: "0" turns them off,
 	// "1" is normal, "4" is four times slower. Empty follows Windows.
 	Animation string `json:"animation"`
+	// Effects picks the look: "full" (frosted glass), "light" (solid
+	// panels, for PCs that draw slowly) or "" to decide automatically.
+	Effects string `json:"effects"`
+	// LightDetected is set when the automatic check found this PC draws
+	// the full look slowly, so the next start uses the light look at once.
+	LightDetected bool `json:"lightDetected"`
 	// SkipUpdateCheck turns off looking for a new AutoPack at startup.
 	SkipUpdateCheck bool `json:"skipUpdateCheck"`
 }

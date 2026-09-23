@@ -278,3 +278,16 @@ func TestAdvancedPropertiesAreReadAndWritten(t *testing.T) {
 		}
 	}
 }
+
+func TestSaveSettingsKeepsOnlyKnownEffects(t *testing.T) {
+	s, _ := newTestService(t)
+	for in, want := range map[string]string{"": "", "full": "full", "light": "light", "fancy": ""} {
+		if err := s.SaveSettings(Settings{Effects: in, LightDetected: true}); err != nil {
+			t.Fatal(err)
+		}
+		got := s.store.Settings()
+		if got.Effects != want || !got.LightDetected {
+			t.Fatalf("effects %q saved as %q (light detected %v), want %q", in, got.Effects, got.LightDetected, want)
+		}
+	}
+}

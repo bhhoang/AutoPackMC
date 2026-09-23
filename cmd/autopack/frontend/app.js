@@ -60,12 +60,12 @@
 
   /* ------------------------------------------------ toast */
   let toastTimer;
-  function toast(msg, bad){
+  function toast(msg, bad, ms = 3200){
     $('#toastMsg').textContent = msg;
     $('#toastIcon').textContent = bad ? 'error' : 'check_circle';
     $('#toastIcon').style.color = bad ? 'var(--danger)' : '';
     const el = $('#toast'); el.classList.add('show');
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), ms);
   }
   const toastErr = (e, vars) => toast(errText(parseErr(e), vars), true);
 
@@ -711,6 +711,8 @@
     $('#setKey').value = st.apiKey || '';
     $('#setUpdCheck').checked = !st.skipUpdateCheck;
     $$('[data-anim-set]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.animSet === (st.animation || ''))));
+    $$('[data-fx-set]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.fxSet === (st.effects || ''))));
+    $('#fxHelp').textContent = t(!st.effects && st.lightDetected ? 'fxAutoLight' : 'fxHelp');
     $('#verText').textContent = S.update && S.update.dev ? t('versionDev') : t('versionIs', {v: S.app.version});
   }
   async function saveSettings(change){
@@ -724,6 +726,67 @@
   $$('[data-theme-set]').forEach(b => b.onclick = () => { applyTheme(b.dataset.themeSet); saveSettings({theme: b.dataset.themeSet}); renderSettings(); });
   $('#setJava').addEventListener('change', e => saveSettings({autoJava: e.target.checked}));
   $('#setUpdCheck').addEventListener('change', e => saveSettings({skipUpdateCheck: !e.target.checked}));
+  // Glass effects: "full", "light", or "" to decide from how this PC draws.
+  function lightLook(){
+    const st = S.app.settings;
+    return st.effects === 'light' || (!st.effects && !!st.lightDetected);
+  }
+  function applyEffects(){
+    const root = document.documentElement, was = root.dataset.effects;
+    root.dataset.effects = lightLook() ? 'light' : 'full';
+    Motion.setScale(S.app.settings.animation || '');
+    if (was && was !== root.dataset.effects) requestAnimationFrame(() => Motion.refresh(false));
+  }
+  // True when Windows is drawing the app without the graphics card, as on
+  // Remote Desktop, in virtual machines or with a broken driver.
+  function drawnWithoutGpu(){
+    try {
+      const gl = document.createElement('canvas').getContext('webgl');
+      if (!gl) return true;
+      const info = gl.getExtension('WEBGL_debug_renderer_info');
+      const name = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+      const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
+      return /swiftshader|basic render|llvmpipe|software/i.test(name);
+    } catch { return false; }
+  }
+  // In Auto, watch the frames while the page settles in. A PC that cannot
+  // keep up with the frosted glass gets the light look, now and next time.
+  function checkEffects(){
+    const st = S.app.settings;
+    if (st.effects || st.lightDetected) return;
+    if (drawnWithoutGpu()) return goLight();
+    if (!Motion.scale() || document.visibilityState !== 'visible') return; // nothing moves to measure
+    Motion.enter($('#v-' + S.view), '.card, .head', {max: 12});
+    const frames = []; let last = 0;
+    const until = performance.now() + 1200;
+    const tick = now => {
+      if (last) frames.push(now - last);
+      last = now;
+      if (now < until) return requestAnimationFrame(tick);
+      if (frames.length < 8 || S.app.settings.effects) return;
+      // The middle frame, so one slow start-up frame does not count.
+      const mid = [...frames].sort((a, b) => a - b)[frames.length >> 1];
+      if (mid > 30) goLight();
+    };
+    requestAnimationFrame(tick);
+  }
+  function goLight(){
+    S.app.settings.lightDetected = true;
+    applyEffects();
+    saveSettings({lightDetected: true});
+    toast(t('toastLightLook'), false, 8000);
+    if (S.view === 'settings') renderSettings();
+  }
+  $$('[data-fx-set]').forEach(b => b.onclick = () => {
+    const effects = b.dataset.fxSet;
+    S.app.settings.effects = effects;
+    // Choosing Auto again checks this PC afresh.
+    if (!effects) S.app.settings.lightDetected = false;
+    applyEffects();
+    saveSettings({effects, lightDetected: S.app.settings.lightDetected});
+    renderSettings();
+    if (!effects) requestAnimationFrame(checkEffects);
+  });
   $$('[data-anim-set]').forEach(b => b.onclick = () => {
     Motion.setScale(b.dataset.animSet);
     saveSettings({animation: b.dataset.animSet});
@@ -1064,7 +1127,7 @@
     S.app = await api().State();
     const saved = S.app.settings.language;
     lang = saved === 'en' || saved === 'vi' ? saved : (navigator.language || '').toLowerCase().startsWith('vi') ? 'vi' : 'en';
-    Motion.setScale(S.app.settings.animation || '');
+    applyEffects();
     applyTheme(S.app.settings.theme);
     applyStatic();
     for (const s of S.app.servers) S.servers.set(s.id, s);
@@ -1077,6 +1140,7 @@
     Motion.attach($('#p-mods .chips'), '.chip', pressed);
     $$('#v-settings .theme-seg').forEach(g => { g.classList.add('lens-accent'); Motion.attach(g, 'button', pressed); });
     ['#pMode', '#pDiff'].forEach(sel => { $(sel).classList.add('lens-accent'); Motion.attach($(sel), 'button', b => b.getAttribute('aria-checked') === 'true'); });
+    document.fonts.ready.then(() => setTimeout(checkEffects, 600));
 
     const on = window.runtime.EventsOn;
     on('setup', onSetup);
